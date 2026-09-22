@@ -276,6 +276,7 @@ export function subscribeToPipeline(onUpdate: () => void): () => void {
 
   const handleCustomEvent = () => onUpdate();
   window.addEventListener(PIPELINE_EVENT_NAME, handleCustomEvent);
+  window.addEventListener('devi_notification_received', handleCustomEvent);
 
   let broadcastChannel: BroadcastChannel | null = null;
   if ('BroadcastChannel' in window) {
@@ -302,6 +303,7 @@ export function subscribeToPipeline(onUpdate: () => void): () => void {
 
   return () => {
     window.removeEventListener(PIPELINE_EVENT_NAME, handleCustomEvent);
+    window.removeEventListener('devi_notification_received', handleCustomEvent);
     if (broadcastChannel) broadcastChannel.close();
     clearInterval(intervalId);
     if (typeof document !== 'undefined') {
