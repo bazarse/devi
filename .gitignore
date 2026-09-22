@@ -37,3 +37,4 @@ next-env.d.ts
 # secrets & helper scripts
 lib/firebase-service-account.json
 scripts/
+.env*
