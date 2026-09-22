@@ -140,7 +140,7 @@ public class DealActionBroadcastReceiver extends BroadcastReceiver {
     }
 
     private int sendPostRequest(String jsonPayload) throws Exception {
-        URL url = new URL("https://devi-rho.vercel.app/api/deals/action");
+        URL url = new URL("https://devi-teal.vercel.app/api/deals/action");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json; utf-8");

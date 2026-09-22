@@ -26,7 +26,7 @@ export async function sendServerPushNotification({
     app_id: appId,
     headings: { en: title || 'Devi Mobile Alert' },
     contents: { en: message || 'You have a new update.' },
-    url: url || 'https://devi-rho.vercel.app',
+    url: url || 'https://devi-teal.vercel.app',
     included_segments: ['Subscribed Users', 'Total Subscriptions'],
     priority: 10,
     android_channel_id: undefined,

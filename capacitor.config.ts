@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Devi Mobile POS',
   webDir: 'out',
   server: {
-    url: 'https://devi-rho.vercel.app',
+    url: 'https://devi-teal.vercel.app',
     cleartext: true
   },
   plugins: {

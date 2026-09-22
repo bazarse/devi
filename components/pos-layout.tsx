@@ -798,7 +798,7 @@ export default function PosLayout({ children }: { children: React.ReactNode }) {
               )}
 
               <a
-                href="https://devi-rho.vercel.app/download"
+                href="https://devi-teal.vercel.app/download"
                 target="_blank"
                 rel="noreferrer"
                 className="block text-[11px] font-bold text-brand-600 hover:text-brand-800 underline"
