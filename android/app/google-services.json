@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "414496589293",
+    "project_id": "mobile-40e89",
+    "storage_bucket": "mobile-40e89.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:414496589293:android:a6d2db7511af47141193e4",
+        "android_client_info": {
+          "package_name": "com.devimobile.pos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAvYj6xW1OdASZg1S-maNga2vkNZNF2w8E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
