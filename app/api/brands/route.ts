@@ -11,13 +11,13 @@ export async function GET() {
     const supabase = createServerSupabaseClient();
     const { data, error } = await supabase
       .from('brands')
-      .select('name, is_active')
+      .select('name')
       .order('name', { ascending: true });
 
     if (error) {
       return NextResponse.json({ success: false, brands: [], error: error.message }, { status: 500 });
     }
-    const brands = (data || []).filter((b: any) => b.is_active !== false).map((b: any) => b.name);
+    const brands = (data || []).map((b: any) => b.name);
     return NextResponse.json(
       { success: true, brands },
       { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     const supabase = createServerSupabaseClient();
     const { error } = await supabase
       .from('brands')
-      .upsert({ name, is_active: true }, { onConflict: 'name' });
+      .upsert({ name }, { onConflict: 'name' });
 
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
