@@ -399,8 +399,7 @@ export default function InvoiceModal({ isOpen, onClose, data }: InvoiceModalProp
                 </div>
 
                 <div className="text-center space-y-0.5 px-2">
-                  <div className="text-[11px] font-bold tracking-tight">SUBJECT TO UJJAIN JURISDICTION</div>
-                  <div className="text-[10px] font-normal tracking-wide italic pb-1">(TRIPLICATE FOR SUPPLIER)</div>
+                  <div className="text-[11px] font-bold tracking-tight pb-1">SUBJECT TO UJJAIN JURISDICTION</div>
                   <div className="text-base font-black tracking-wide uppercase">{data.storeName || 'DEVI MOBILE ACCESSORIES'}</div>
                   <div className="text-[10.5px] font-medium uppercase">{data.storeAddress || '206/1 KANTHAL CHOURAHA UJJAIN'}</div>
                   <div className="text-[11px] font-bold">GSTIN/UIN: {data.storeGstin || '23ALGPK9135M1ZT'}</div>
