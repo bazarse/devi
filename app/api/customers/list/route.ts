@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const storeId = searchParams.get('storeId');
 
     const supabase = createServerSupabaseClient();
-    let query = supabase.from('customers').select('*').order('updated_at', { ascending: false });
+    let query = supabase.from('customers').select('id, name, phone, address, credit_balance, total_purchases, created_at, updated_at, primary_store_id').order('updated_at', { ascending: false });
 
     if (storeId && storeId !== 'ALL') {
       const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
@@ -34,18 +34,18 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, customers: [] }, { status: 500 });
     }
 
-    // Fetch approved deals and leads for 360 CRM customer profile aggregation
+    // Fetch approved deals and leads for 360 CRM customer profile aggregation (selective column projection)
     const normalizePhone = (p?: string | null) => (p ? String(p).replace(/\D/g, '').slice(-10) : '');
 
     const { data: dealsData } = await supabase
       .from('sales_approvals')
-      .select('*')
+      .select('id, store_id, customer_phone, product_name, category, imei_serial, final_price, payment_method, finance_provider, disbursement_amount, down_payment_cash, down_payment_upi, down_payment_card, cash_amount, upi_amount, card_amount, neft_amount, device_exchange_amount, remark, vas_details, sales_person_name, status, approved_at, created_at')
       .eq('status', 'approved')
       .order('approved_at', { ascending: false });
 
     const { data: leadsData } = await supabase
       .from('leads')
-      .select('*')
+      .select('id, customer_phone, product_of_interest, interest_category, status, created_at, notes, store_id')
       .order('created_at', { ascending: false });
 
     const dealsByPhone: Record<string, any[]> = {};

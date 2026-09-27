@@ -286,12 +286,9 @@ export function subscribeToPipeline(onUpdate: () => void): () => void {
     } catch (e) {}
   }
 
-  // Real-time background sync polling across devices (active tab only, 25s smart interval)
-  const intervalId = setInterval(() => {
-    if (typeof document !== 'undefined' && document.hidden) return;
-    onUpdate();
-  }, 25000);
-
+  // Note: Instant real-time updates are driven by Push Notifications (devi_notification_received),
+  // Cross-tab BroadcastChannel, and visibilitychange event when user focuses the tab.
+  // Aggressive setInterval polling is disabled to preserve 100% free Supabase bandwidth quota.
   const handleVisibilityChange = () => {
     if (typeof document !== 'undefined' && !document.hidden) {
       onUpdate();
@@ -305,7 +302,6 @@ export function subscribeToPipeline(onUpdate: () => void): () => void {
     window.removeEventListener(PIPELINE_EVENT_NAME, handleCustomEvent);
     window.removeEventListener('devi_notification_received', handleCustomEvent);
     if (broadcastChannel) broadcastChannel.close();
-    clearInterval(intervalId);
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
