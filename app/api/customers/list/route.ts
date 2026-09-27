@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const storeId = searchParams.get('storeId');
 
     const supabase = createServerSupabaseClient();
-    let query = supabase.from('customers').select('id, name, phone, address, credit_balance, total_purchases, created_at, updated_at, primary_store_id').order('updated_at', { ascending: false });
+    let query = supabase.from('customers').select('id, name, phone, address, credit_balance, total_spent, created_at, updated_at, primary_store_id').order('updated_at', { ascending: false });
 
     if (storeId && storeId !== 'ALL') {
       const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
