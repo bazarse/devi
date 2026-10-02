@@ -28,6 +28,7 @@ import InvoiceModal from '@/components/invoice-modal';
 import { InvoiceData, getHsnCodeForProduct } from '@/lib/invoice-generator';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import PaginationControls from '@/components/pagination-controls';
 
 // Evaluates dates strictly in Indian Standard Time ('Asia/Kolkata')
 function getIstDateString(dateInput?: string | number | Date): string {
@@ -168,6 +169,19 @@ export default function SuperAdminRegisterPage() {
       };
     });
   }, [filteredDeals]);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStoreFilter, dateFilter, customDate, searchQuery]);
+
+  const paginatedRegisterData = useMemo(() => {
+    const from = (currentPage - 1) * pageSize;
+    return registerData.slice(from, from + pageSize);
+  }, [registerData, currentPage, pageSize]);
 
   // Compute 8 Financial Balance Metrics
   const totalRecords = registerData.length;
@@ -494,9 +508,11 @@ export default function SuperAdminRegisterPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {registerData.map((row, index) => (
+                {paginatedRegisterData.map((row, index) => {
+                  const rowIndex = (currentPage - 1) * pageSize + index + 1;
+                  return (
                   <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-3 font-bold text-slate-400">{index + 1}</td>
+                    <td className="p-3 font-bold text-slate-400">{rowIndex}</td>
                     <td className="p-3 font-mono font-bold text-amber-600">{row.billNumber}</td>
                     <td className="p-3 font-bold text-slate-800">
                       <span className="px-2 py-0.5 rounded-md bg-slate-100 text-[10px] text-slate-700 font-black">
@@ -596,11 +612,23 @@ export default function SuperAdminRegisterPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
+
+        {/* ── 📄 PAGINATION CONTROLS ── */}
+        <PaginationControls
+          currentPage={currentPage}
+          totalItems={registerData.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[25, 50, 100, 200]}
+          itemLabel="sales register entries"
+        />
       </div>
 
       {/* Invoice Modal for View / Print */}

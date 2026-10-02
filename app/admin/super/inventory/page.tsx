@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   Boxes, 
@@ -21,13 +21,16 @@ import {
   Building2, 
   Filter,
   RefreshCw,
-  Camera
+  Camera,
+  Tag
 } from 'lucide-react';
 import { formatINR } from '@/lib/utils';
 import { getActiveStores, StoreBranch, DEFAULT_STORES } from '@/lib/store-service';
 import confetti from 'canvas-confetti';
 import LiveBarcodeScannerModal from '@/components/live-barcode-scanner-modal';
-import { getAllBrands, fetchAllBrands, addCustomBrand } from '@/lib/brand-service';
+import PaginationControls from '@/components/pagination-controls';
+import BrandManagementModal from '@/components/brand-management-modal';
+import { getAllBrands, fetchAllBrands, addCustomBrand, getStoredBrandDetails } from '@/lib/brand-service';
 
 import { REAL_STRUCTURED_SUPER, InventoryItemModel } from '@/lib/real-inventory-data';
 
@@ -48,6 +51,7 @@ export default function SuperAdminInventoryPage() {
   const [brandList, setBrandList] = useState<string[]>(['All']);
   const [showAddBrand, setShowAddBrand] = useState(false);
   const [newBrandName, setNewBrandName] = useState('');
+  const [showBrandManagerModal, setShowBrandManagerModal] = useState(false);
   useEffect(() => {
     setBrandList(['All', ...getAllBrands()]);
     // Refresh from central Supabase so brands added on any device appear here.
@@ -55,12 +59,26 @@ export default function SuperAdminInventoryPage() {
   }, []);
   const BRANDS = brandList;
 
+  const handleBrandChange = (brandName: string) => {
+    setInwardBrand(brandName);
+    const storedBrands = getStoredBrandDetails();
+    const matched = storedBrands.find(b => b.name.toLowerCase() === brandName.toLowerCase());
+    if (matched) {
+      if (matched.supplierName) {
+        setInwardSupplier(matched.supplierName);
+      }
+      if (matched.supplierBillNo) {
+        setInwardPurchaseInvoiceNo(matched.supplierBillNo);
+      }
+    }
+  };
+
   const handleAddBrand = async () => {
     const added = await addCustomBrand(newBrandName);
     if (added) {
       const all = await fetchAllBrands();
       setBrandList(['All', ...all]);
-      setInwardBrand(added);
+      handleBrandChange(added);
       setNewBrandName('');
       setShowAddBrand(false);
     }
@@ -220,6 +238,19 @@ export default function SuperAdminInventoryPage() {
     return matchesStore && matchesCategory && matchesBrand && matchesSearch;
   });
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStoreFilter, selectedCategory, selectedBrand, searchQuery]);
+
+  const paginatedInventory = useMemo(() => {
+    const from = (currentPage - 1) * pageSize;
+    return filteredInventory.slice(from, from + pageSize);
+  }, [filteredInventory, currentPage, pageSize]);
+
   const totalStockUnits = filteredInventory.reduce((acc, i) => acc + i.quantity, 0);
   const totalStockValuation = filteredInventory.reduce((acc, i) => acc + (i.costPrice * i.quantity), 0);
 
@@ -241,6 +272,16 @@ export default function SuperAdminInventoryPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Manage Brands Master Button */}
+          <button
+            type="button"
+            onClick={() => setShowBrandManagerModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold transition-all active:scale-95 min-h-[44px]"
+          >
+            <Tag className="w-4 h-4 text-amber-700" />
+            <span>🏷️ Manage Brands & Bills</span>
+          </button>
+
           <Link
             href="/admin/super/import-stock"
             className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors min-h-[44px]"
@@ -366,7 +407,18 @@ export default function SuperAdminInventoryPage() {
 
       {/* Inventory Item Cards */}
       <div className="space-y-4">
-        {filteredInventory.map((item) => {
+        {paginatedInventory.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3 shadow-sm">
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+              <Boxes className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-black text-slate-800">No inventory items found</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
+              Try adjusting your search query, store branch filter, or selected brand tab.
+            </p>
+          </div>
+        ) : (
+          paginatedInventory.map((item) => {
           const isExpanded = expandedItemId === item.id;
           return (
             <div
@@ -459,8 +511,23 @@ export default function SuperAdminInventoryPage() {
               )}
             </div>
           );
-        })}
+        }))}
       </div>
+
+      {/* Pagination Controls */}
+      {filteredInventory.length > 0 && (
+        <PaginationControls
+          currentPage={currentPage}
+          totalItems={filteredInventory.length}
+          pageSize={pageSize}
+          itemLabel="stock items"
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setCurrentPage(1);
+          }}
+        />
+      )}
 
       {/* MODAL: ADD INWARD STOCK TO ANY BRANCH */}
       {showAddModal && (
@@ -529,7 +596,7 @@ export default function SuperAdminInventoryPage() {
                       if (e.target.value === '__ADD_NEW__') {
                         setShowAddBrand(true);
                       } else {
-                        setInwardBrand(e.target.value);
+                        handleBrandChange(e.target.value);
                       }
                     }}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
@@ -817,6 +884,20 @@ export default function SuperAdminInventoryPage() {
         }}
         title="HQ Stock Inward Barcode Scanner"
         subtitle="Point camera at box barcodes. Scans continuously for multi-unit inwarding."
+      />
+
+      {/* BRAND & SUPPLIER BILLS MANAGEMENT MODAL */}
+      <BrandManagementModal
+        isOpen={showBrandManagerModal}
+        onClose={() => {
+          setShowBrandManagerModal(false);
+          setBrandList(['All', ...getAllBrands()]);
+        }}
+        onBrandSelected={(selected) => {
+          handleBrandChange(selected.name);
+          setBrandList(['All', ...getAllBrands()]);
+          setShowAddModal(true);
+        }}
       />
 
     </div>

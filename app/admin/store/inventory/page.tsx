@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   Boxes, 
@@ -33,7 +33,9 @@ import confetti from 'canvas-confetti';
 import { REAL_STRUCTURED_STORE_1, REAL_STRUCTURED_STORE_2, InventoryItemModel } from '@/lib/real-inventory-data';
 import LiveBarcodeScannerModal from '@/components/live-barcode-scanner-modal';
 import ErrorBoundary from '@/components/error-boundary';
-import { getAllBrands, fetchAllBrands, addCustomBrand } from '@/lib/brand-service';
+import PaginationControls from '@/components/pagination-controls';
+import BrandManagementModal from '@/components/brand-management-modal';
+import { getAllBrands, fetchAllBrands, addCustomBrand, getStoredBrandDetails } from '@/lib/brand-service';
 
 export type InventoryItem = InventoryItemModel;
 
@@ -51,6 +53,7 @@ export default function InwardStockInventoryPage() {
   const [brandList, setBrandList] = useState<string[]>(['All']);
   const [showAddBrand, setShowAddBrand] = useState(false);
   const [newBrandName, setNewBrandName] = useState('');
+  const [showBrandManagerModal, setShowBrandManagerModal] = useState(false);
   useEffect(() => {
     setBrandList(['All', ...getAllBrands()]);
     // Refresh from central Supabase so brands added on any device appear here.
@@ -58,12 +61,26 @@ export default function InwardStockInventoryPage() {
   }, []);
   const BRANDS = brandList;
 
+  const handleBrandChange = (brandName: string) => {
+    setInwardBrand(brandName);
+    const storedBrands = getStoredBrandDetails();
+    const matched = storedBrands.find(b => b.name.toLowerCase() === brandName.toLowerCase());
+    if (matched) {
+      if (matched.supplierName) {
+        setInwardSupplier(matched.supplierName);
+      }
+      if (matched.supplierBillNo) {
+        setInwardPurchaseInvoiceNo(matched.supplierBillNo);
+      }
+    }
+  };
+
   const handleAddBrand = async () => {
     const added = await addCustomBrand(newBrandName);
     if (added) {
       const all = await fetchAllBrands();
       setBrandList(['All', ...all]);
-      setInwardBrand(added);
+      handleBrandChange(added);
       setNewBrandName('');
       setShowAddBrand(false);
     }
@@ -351,6 +368,19 @@ export default function InwardStockInventoryPage() {
     return matchesSearch && matchesCategory && matchesBrand;
   });
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategory, selectedBrand]);
+
+  const paginatedInventory = useMemo(() => {
+    const from = (currentPage - 1) * pageSize;
+    return filteredInventory.slice(from, from + pageSize);
+  }, [filteredInventory, currentPage, pageSize]);
+
   const totalStockUnits = (inventory || []).reduce((acc, i) => acc + (i?.quantity || 0), 0);
   const totalStockValuation = (inventory || []).reduce((acc, i) => acc + ((i?.costPrice || 0) * (i?.quantity || 0)), 0);
 
@@ -372,6 +402,16 @@ export default function InwardStockInventoryPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Manage Brands Master Button */}
+          <button
+            type="button"
+            onClick={() => setShowBrandManagerModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold transition-all active:scale-95 min-h-[44px]"
+          >
+            <Tag className="w-4 h-4 text-amber-700" />
+            <span>🏷️ Manage Brands & Bills</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveMainTab('bulk_import')}
@@ -616,7 +656,18 @@ export default function InwardStockInventoryPage() {
       {/* Inventory Items List */}
       <ErrorBoundary title="Live Store Inventory Items" description="Unable to load inventory items table due to a localized render issue. Please retry.">
         <div className="space-y-4">
-          {filteredInventory.map((item) => {
+          {paginatedInventory.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3 shadow-sm">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                <Boxes className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-black text-slate-800">No inventory items found</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
+                Try adjusting your search query, retail category, or selected brand tab.
+              </p>
+            </div>
+          ) : (
+            paginatedInventory.map((item) => {
             if (!item) return null;
             const imeiList = item.imeiList || [];
             const isExpanded = expandedItemId === item.id;
@@ -716,9 +767,24 @@ export default function InwardStockInventoryPage() {
                 )}
               </div>
             );
-          })}
+          }))}
         </div>
       </ErrorBoundary>
+
+      {/* Pagination Controls */}
+      {filteredInventory.length > 0 && (
+        <PaginationControls
+          currentPage={currentPage}
+          totalItems={filteredInventory.length}
+          pageSize={pageSize}
+          itemLabel="stock items"
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setCurrentPage(1);
+          }}
+        />
+      )}
     </div>
   )}
 
@@ -791,7 +857,7 @@ export default function InwardStockInventoryPage() {
                       if (e.target.value === '__ADD_NEW__') {
                         setShowAddBrand(true);
                       } else {
-                        setInwardBrand(e.target.value);
+                        handleBrandChange(e.target.value);
                       }
                     }}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
@@ -1084,6 +1150,20 @@ export default function InwardStockInventoryPage() {
         }}
         title="Stock Inward Barcode Scanner"
         subtitle="Point camera at box barcodes. Scans continuously for multi-unit inwarding."
+      />
+
+      {/* BRAND & SUPPLIER BILLS MANAGEMENT MODAL */}
+      <BrandManagementModal
+        isOpen={showBrandManagerModal}
+        onClose={() => {
+          setShowBrandManagerModal(false);
+          setBrandList(['All', ...getAllBrands()]);
+        }}
+        onBrandSelected={(selected) => {
+          handleBrandChange(selected.name);
+          setBrandList(['All', ...getAllBrands()]);
+          setShowAddModal(true);
+        }}
       />
 
     </div>

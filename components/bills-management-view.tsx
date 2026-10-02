@@ -34,6 +34,7 @@ import { getAllTallyStatuses, toggleTallyStatus, subscribeToTallyUpdates, TallyS
 import InvoiceModal from '@/components/invoice-modal';
 import { InvoiceData, getHsnCodeForProduct } from '@/lib/invoice-generator';
 import confetti from 'canvas-confetti';
+import PaginationControls from '@/components/pagination-controls';
 
 interface BillsManagementViewProps {
   userRole: 'store_admin' | 'super_admin';
@@ -192,6 +193,20 @@ export default function BillsManagementView({ userRole, defaultStoreId = 'DM-01'
       return true;
     });
   }, [deals, selectedStoreFilter, tallyFilter, dateFilter, searchQuery, tallyMap]);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStoreFilter, tallyFilter, dateFilter, searchQuery]);
+
+  const paginatedDeals = useMemo(() => {
+    const from = (currentPage - 1) * pageSize;
+    return filteredDeals.slice(from, from + pageSize);
+  }, [filteredDeals, currentPage, pageSize]);
 
   // KPI Calculations
   const totalBills = filteredDeals.length;
@@ -456,10 +471,11 @@ export default function BillsManagementView({ userRole, defaultStoreId = 'DM-01'
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredDeals.map((deal, idx) => {
+                {paginatedDeals.map((deal, idx) => {
                   const billNumber = `25-26/${String(deal.token || deal.id || '').replace('SA-', '')}/DEVI`;
                   const isUploaded = tallyMap[deal.id] ? Boolean(tallyMap[deal.id]?.isUploaded) : Boolean(deal.isTallyUploaded);
                   const uploadDetail = tallyMap[deal.id];
+                  const itemIndex = (currentPage - 1) * pageSize + idx + 1;
 
                   return (
                     <tr 
@@ -470,7 +486,7 @@ export default function BillsManagementView({ userRole, defaultStoreId = 'DM-01'
                     >
                       {/* Index */}
                       <td className="py-3.5 px-4 text-center font-mono text-slate-400 font-bold text-[11px]">
-                        {idx + 1}
+                        {itemIndex}
                       </td>
 
                       {/* Tally Upload Checkbox & Status */}
@@ -605,6 +621,17 @@ export default function BillsManagementView({ userRole, defaultStoreId = 'DM-01'
             </table>
           </div>
         )}
+
+        {/* ── 📄 PAGINATION CONTROLS ── */}
+        <PaginationControls
+          currentPage={currentPage}
+          totalItems={filteredDeals.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[25, 50, 100, 200]}
+          itemLabel="bills"
+        />
       </div>
 
       {/* ── 🖨️ A4 INVOICE MODAL PREVIEW ── */}
