@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   ShieldCheck, 
@@ -34,6 +34,7 @@ import {
 import InvoiceModal from '@/components/invoice-modal';
 import { InvoiceData } from '@/lib/invoice-generator';
 import DealPaymentBreakdown from '@/components/deal-payment-breakdown';
+import PaginationControls from '@/components/pagination-controls';
 import confetti from 'canvas-confetti';
 
 export default function SuperAdminApprovalsPage() {
@@ -43,6 +44,8 @@ export default function SuperAdminApprovalsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'pending_approval' | 'approved' | 'rejected'>('pending_approval');
   const [isLoading, setIsLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [toastMessage, setToastMessage] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // Selected Deal Detail Modal State
@@ -248,6 +251,15 @@ export default function SuperAdminApprovalsPage() {
     return matchesStore && matchesStatus && matchesSearch;
   });
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStoreFilter, statusFilter, searchQuery]);
+
+  const paginatedQueue = useMemo(() => {
+    const from = (currentPage - 1) * pageSize;
+    return filteredQueue.slice(from, from + pageSize);
+  }, [filteredQueue, currentPage, pageSize]);
+
   const handleOpenInvoice = (item: SalesDeal) => {
     const isStore2 = item.storeId === 'DM-02' || (item.storeName && item.storeName.includes('2.0'));
     setSelectedInvoice({
@@ -398,7 +410,7 @@ export default function SuperAdminApprovalsPage() {
             <div className="text-xs">All counter sales across selected store branches are processed.</div>
           </div>
         ) : (
-          filteredQueue.map((item) => (
+          paginatedQueue.map((item) => (
             <div
               key={item.id}
               onClick={() => setViewingDeal(item)}
@@ -553,6 +565,21 @@ export default function SuperAdminApprovalsPage() {
           ))
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {filteredQueue.length > 0 && (
+        <PaginationControls
+          currentPage={currentPage}
+          totalItems={filteredQueue.length}
+          pageSize={pageSize}
+          itemLabel="deals"
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setCurrentPage(1);
+          }}
+        />
+      )}
 
       {/* REJECT MODAL */}
       {rejectingId && (

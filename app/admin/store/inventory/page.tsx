@@ -402,15 +402,14 @@ export default function InwardStockInventoryPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Manage Brands Master Button */}
-          <button
-            type="button"
-            onClick={() => setShowBrandManagerModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold transition-all active:scale-95 min-h-[44px]"
+          {/* Manage Brands Master Page Link */}
+          <Link
+            href="/admin/store/brands"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold transition-all min-h-[44px]"
           >
             <Tag className="w-4 h-4 text-amber-700" />
-            <span>🏷️ Manage Brands & Bills</span>
-          </button>
+            <span>Brands & Supplier Bills Master</span>
+          </Link>
 
           <button
             type="button"

@@ -20,7 +20,8 @@ import {
   TrendingUp,
   CreditCard,
   Contact2,
-  ArrowDownToLine
+  ArrowDownToLine,
+  Tag
 } from 'lucide-react';
 import { getActiveStores, StoreBranch, DEFAULT_STORES } from '@/lib/store-service';
 import { isRunningInApp } from '@/lib/utils';
@@ -31,7 +32,6 @@ export default function Navbar() {
   const [isNativeApp, setIsNativeApp] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState('DM-01');
   const [storesList, setStoresList] = useState<StoreBranch[]>(DEFAULT_STORES);
-
 
   useEffect(() => {
     if (isRunningInApp()) {
@@ -49,6 +49,7 @@ export default function Navbar() {
     { href: '/pos', label: 'POS Billing', icon: ShoppingCart },
     { href: '/pos/approvals', label: 'Approvals', icon: FileSpreadsheet },
     { href: '/admin/store', label: 'Store Admin', icon: StoreIcon },
+    { href: '/admin/super/brands', label: 'Brands & Bills', icon: Tag },
     { href: '/admin/store/finance', label: 'Finance & Banks', icon: CreditCard },
     { href: '/admin/super/customers', label: 'Contacts CRM', icon: Contact2 },
     { href: '/admin/store/register', label: 'Day Book & Register', icon: FileSpreadsheet },

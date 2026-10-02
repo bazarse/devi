@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   CheckCircle2, 
@@ -10,11 +10,15 @@ import {
   Filter, 
   Smartphone, 
   User, 
-  Calendar,
-  IndianRupee,
-  ArrowLeft,
-  ChevronRight,
-  Printer
+  Calendar, 
+  IndianRupee, 
+  ArrowLeft, 
+  ChevronRight, 
+  Printer, 
+  Eye, 
+  Gift, 
+  ShieldCheck, 
+  X 
 } from 'lucide-react';
 import { formatINR, formatDate, formatDateTime } from '@/lib/utils';
 import { 
@@ -25,12 +29,14 @@ import {
 import InvoiceModal from '@/components/invoice-modal';
 import DealPaymentBreakdown from '@/components/deal-payment-breakdown';
 import { InvoiceData } from '@/lib/invoice-generator';
-import { Eye, Gift, ShieldCheck, X } from 'lucide-react';
+import PaginationControls from '@/components/pagination-controls';
 
 export default function SalesApprovalsPage() {
   const [approvalsList, setApprovalsList] = useState<SalesDeal[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   
   // Selected Deal Detail Modal State
   const [viewingDeal, setViewingDeal] = useState<SalesDeal | null>(null);
@@ -94,6 +100,15 @@ export default function SalesApprovalsPage() {
                           (item.id || '').toLowerCase().includes(clean);
     return matchesStatus && matchesSearch;
   });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStatus, searchQuery]);
+
+  const paginatedApprovals = useMemo(() => {
+    const from = (currentPage - 1) * pageSize;
+    return filteredApprovals.slice(from, from + pageSize);
+  }, [filteredApprovals, currentPage, pageSize]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -220,7 +235,7 @@ export default function SalesApprovalsPage() {
             <div className="text-xs">Your counter deals will appear here as you submit them.</div>
           </div>
         ) : (
-          filteredApprovals.map((item) => (
+          paginatedApprovals.map((item) => (
             <div
               key={item.id}
               onClick={() => setViewingDeal(item)}
@@ -304,6 +319,21 @@ export default function SalesApprovalsPage() {
           ))
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {filteredApprovals.length > 0 && (
+        <PaginationControls
+          currentPage={currentPage}
+          totalItems={filteredApprovals.length}
+          pageSize={pageSize}
+          itemLabel="sales records"
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setCurrentPage(1);
+          }}
+        />
+      )}
 
       {/* COMPREHENSIVE DEAL DETAILS MODAL */}
       {viewingDeal && (

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   Target, 
@@ -33,6 +33,7 @@ import {
   deleteLead, 
   subscribeToLeads 
 } from '@/lib/leads-service';
+import PaginationControls from '@/components/pagination-controls';
 import confetti from 'canvas-confetti';
 
 export default function SuperAdminLeadsPage() {
@@ -41,6 +42,8 @@ export default function SuperAdminLeadsPage() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   // Form State
   const [inwardStore, setInwardStore] = useState('DM-01');
@@ -108,6 +111,15 @@ export default function SuperAdminLeadsPage() {
       (l.salesmanName || '').toLowerCase().includes(q);
     return matchesStore && matchesStatus && matchesSearch;
   });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedStore, statusFilter, searchQuery]);
+
+  const paginatedLeads = useMemo(() => {
+    const from = (currentPage - 1) * pageSize;
+    return filteredLeads.slice(from, from + pageSize);
+  }, [filteredLeads, currentPage, pageSize]);
 
   const totalCount = filteredLeads.length;
   const hotCount = filteredLeads.filter(l => l.status === 'Hot Lead').length;
@@ -238,18 +250,18 @@ export default function SuperAdminLeadsPage() {
 
       {/* Leads List Cards Grid */}
       {filteredLeads.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
+        <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3 shadow-sm">
           <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
             <Target className="w-8 h-8" />
           </div>
-          <h3 className="text-base font-black text-slate-800">No Chain Leads Logged Yet</h3>
+          <h3 className="text-base font-black text-slate-800">No Customer Leads Found</h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            Jab bhi kisi bhi branch (DM-01 ya DM-02) me koi customer enquiry log hogi, wo yaha live dikhegi.
+            Customer inquiries logged from store branches will appear here in real-time.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredLeads.map((lead) => (
+          {paginatedLeads.map((lead) => (
             <div
               key={lead.id}
               className="bg-white rounded-3xl border border-slate-200 p-5 space-y-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
@@ -365,6 +377,21 @@ export default function SuperAdminLeadsPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Pagination Controls */}
+      {filteredLeads.length > 0 && (
+        <PaginationControls
+          currentPage={currentPage}
+          totalItems={filteredLeads.length}
+          pageSize={pageSize}
+          itemLabel="leads"
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setCurrentPage(1);
+          }}
+        />
       )}
 
       {/* CREATE NEW LEAD MODAL */}
