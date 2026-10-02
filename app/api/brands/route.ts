@@ -20,7 +20,7 @@ export async function GET() {
     const brands = (data || []).map((b: any) => b.name);
     return NextResponse.json(
       { success: true, brands },
-      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+      { headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' } }
     );
   } catch (e: any) {
     return NextResponse.json({ success: false, brands: [], error: e?.message }, { status: 500 });

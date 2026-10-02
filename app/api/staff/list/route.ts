@@ -56,7 +56,10 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({ success: true, staff });
+    return NextResponse.json(
+      { success: true, staff },
+      { headers: { 'Cache-Control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=120' } }
+    );
   } catch (err: any) {
     console.error('Server error in staff list route:', err);
     return NextResponse.json({ success: false, error: err?.message, staff: [] }, { status: 500 });

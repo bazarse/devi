@@ -184,7 +184,14 @@ export default function NotificationCenter({ userRole, userPhone, userStoreId }:
     setNotifications(fresh.filter(isNotificationForCurrentRole));
 
     // 0. Auto-sync notifications from cloud API (runs on mount, periodically, and on pipeline events)
-    async function syncMissedNotifications() {
+    let lastSyncTimestamp = 0;
+    async function syncMissedNotifications(force = false) {
+      const rightNow = Date.now();
+      if (!force && rightNow - lastSyncTimestamp < 30000) {
+        return; // Skip if synced within the last 30 seconds
+      }
+      lastSyncTimestamp = rightNow;
+
       try {
         let recentDeals: any[] = [];
         try {
@@ -196,7 +203,8 @@ export default function NotificationCenter({ userRole, userPhone, userStoreId }:
           } else if (role === 'store_admin' && userStoreId) {
             queryParams.set('storeId', userStoreId);
           }
-          const fetchUrl = queryParams.toString() ? `/api/deals/list?${queryParams.toString()}` : '/api/deals/list';
+          queryParams.set('limit', '25');
+          const fetchUrl = `/api/deals/list?${queryParams.toString()}`;
           const res = await fetch(fetchUrl, { cache: 'no-store' });
           if (res.ok) {
             const json = await res.json();
@@ -413,7 +421,7 @@ export default function NotificationCenter({ userRole, userPhone, userStoreId }:
     }
 
     const unsubPipeline = subscribeToPipeline(() => {
-      syncMissedNotifications();
+      syncMissedNotifications(true);
     });
 
     // 1. Listen to Local Custom Events (Same Tab)

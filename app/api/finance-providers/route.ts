@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json(
       { success: true, providers: (data || []).map(mapRow) },
-      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+      { headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' } }
     );
   } catch (e: any) {
     return NextResponse.json({ success: false, providers: [], error: e?.message }, { status: 500 });

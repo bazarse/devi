@@ -202,12 +202,13 @@ export async function submitSaleDeal(dealData: Omit<SalesDeal, 'id' | 'submitted
 /**
  * 3. FETCH SALES PIPELINE DEALS (100% PURE CLOUD SUPABASE)
  */
-export async function fetchSalesPipelineDeals(filter?: { storeId?: string; status?: string; salesmanPhone?: string }): Promise<SalesDeal[]> {
+export async function fetchSalesPipelineDeals(filter?: { storeId?: string; status?: string; salesmanPhone?: string; limit?: number | string }): Promise<SalesDeal[]> {
   try {
     const params = new URLSearchParams();
     if (filter?.storeId) params.set('storeId', filter.storeId);
     if (filter?.status) params.set('status', filter.status);
     if (filter?.salesmanPhone) params.set('salesmanPhone', filter.salesmanPhone);
+    if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
 
     const res = await fetch(`/api/deals/list?${params.toString()}`, { cache: 'no-store' });
     const data = await res.json();
