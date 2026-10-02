@@ -37,13 +37,8 @@ export async function GET(request: Request) {
       .select('id, store_id, customer_name, customer_phone, customer_address, product_name, category, imei_serial, product_price, final_price, discount, payment_method, finance_provider, disbursement_amount, down_payment_cash, down_payment_upi, down_payment_card, cash_amount, upi_amount, card_amount, neft_amount, remark, has_device_exchange, device_name, device_imei, device_condition, device_exchange_amount, gifts, vas_details, sales_person_name, sales_person_phone, status, approved_by_name, approved_at, rejection_reason, created_at, updated_at, invoice_id, barcode')
       .order('created_at', { ascending: false });
 
-    if (limit && (limit.toUpperCase() === 'ALL' || limit === '-1')) {
-      // Unbounded fetch if explicitly requested
-    } else if (limit && !isNaN(Number(limit))) {
+    if (limit && !isNaN(Number(limit)) && Number(limit) > 0) {
       query = query.limit(Number(limit));
-    } else {
-      // Safe default limit to preserve bandwidth and performance
-      query = query.limit(150);
     }
 
     if (storeId && storeId !== 'ALL') {
