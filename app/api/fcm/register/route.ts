@@ -31,6 +31,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
+    try {
+      const { invalidateFcmTokensCache } = await import('@/lib/fcm-service');
+      invalidateFcmTokensCache();
+    } catch (_) {}
+
     console.log(`FCM token saved for ${phone} (${role})`);
     return NextResponse.json({ success: true, phone, role });
   } catch (error: any) {

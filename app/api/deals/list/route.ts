@@ -37,9 +37,8 @@ export async function GET(request: Request) {
       .select('id, store_id, customer_name, customer_phone, customer_address, product_name, category, imei_serial, product_price, final_price, discount, payment_method, finance_provider, disbursement_amount, down_payment_cash, down_payment_upi, down_payment_card, cash_amount, upi_amount, card_amount, neft_amount, remark, has_device_exchange, device_name, device_imei, device_condition, device_exchange_amount, gifts, vas_details, sales_person_name, sales_person_phone, status, approved_by_name, approved_at, rejection_reason, created_at, updated_at, invoice_id, barcode')
       .order('created_at', { ascending: false });
 
-    if (limit && !isNaN(Number(limit)) && Number(limit) > 0) {
-      query = query.limit(Number(limit));
-    }
+    const limitNum = (limit && !isNaN(Number(limit)) && Number(limit) > 0) ? Number(limit) : 500;
+    query = query.limit(limitNum);
 
     if (storeId && storeId !== 'ALL') {
       const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
@@ -129,10 +128,7 @@ export async function GET(request: Request) {
       { success: true, deals },
       {
         headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-          'Surrogate-Control': 'no-store'
+          'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=30',
         }
       }
     );

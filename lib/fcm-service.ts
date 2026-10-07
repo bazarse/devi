@@ -10,21 +10,47 @@ export interface FcmPushOptions {
   data?: Record<string, string>;
 }
 
+let cachedTokens: { timestamp: number; list: Array<{ phone: string; token: string; role: string; store?: string }> } | null = null;
+const TOKENS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export function invalidateFcmTokensCache() {
+  cachedTokens = null;
+}
+
 export async function sendFcmPushNotification(options: FcmPushOptions): Promise<{ sent: number; total: number; results: any[] }> {
   try {
-    const supabase = createServerSupabaseClient();
-    const { data: files, error } = await supabase.storage.from('fcm-tokens').list();
-    if (error || !files || files.length === 0) {
-      console.warn('No FCM tokens registered in storage');
-      return { sent: 0, total: 0, results: [] };
+    const now = Date.now();
+    let allTokens = (cachedTokens && (now - cachedTokens.timestamp < TOKENS_CACHE_TTL)) ? cachedTokens.list : null;
+
+    if (!allTokens) {
+      const supabase = createServerSupabaseClient();
+      const { data: files, error } = await supabase.storage.from('fcm-tokens').list();
+      if (error || !files || files.length === 0) {
+        console.warn('No FCM tokens registered in storage');
+        return { sent: 0, total: 0, results: [] };
+      }
+
+      const fetchedList: Array<{ phone: string; token: string; role: string; store?: string }> = [];
+      for (const file of files) {
+        try {
+          const { data } = await supabase.storage.from('fcm-tokens').download(file.name);
+          if (data) {
+            const parsed = JSON.parse(await data.text());
+            if (parsed.token) {
+              fetchedList.push(parsed);
+            }
+          }
+        } catch (err) {
+          console.warn('Error reading token file', file.name, err);
+        }
+      }
+      allTokens = fetchedList;
+      cachedTokens = { timestamp: now, list: fetchedList };
     }
 
     let cleanTargetPhone = options.targetPhone ? options.targetPhone.replace(/\D/g, '').slice(-10) : '';
-    // Treat an all-zero / dummy phone as no target, so a decision never fans
-    // out to placeholder-phone devices.
     if (/^0+$/.test(cleanTargetPhone)) cleanTargetPhone = '';
 
-    // Safeguard: Never broadcast salesman decisions chain-wide without a real targetPhone (BUG-R1-06)
     if (options.role === 'salesman' && !cleanTargetPhone) {
       console.warn('sendFcmPushNotification: Salesman notifications require a real targetPhone to prevent chain-wide broadcast');
       return { sent: 0, total: 0, results: [] };
@@ -33,34 +59,23 @@ export async function sendFcmPushNotification(options: FcmPushOptions): Promise<
     const cleanStore = options.storeCode ? String(options.storeCode).trim() : '';
 
     const targetTokens: string[] = [];
-    for (const file of files) {
-      try {
-        const { data } = await supabase.storage.from('fcm-tokens').download(file.name);
-        if (data) {
-          const parsed = JSON.parse(await data.text());
-          const roleMatch = !options.role || 
-            options.role === parsed.role || 
-            (options.role === 'admin' && (parsed.role === 'super_admin' || parsed.role === 'store_admin'));
+    for (const parsed of allTokens) {
+      const roleMatch = !options.role || 
+        options.role === parsed.role || 
+        (options.role === 'admin' && (parsed.role === 'super_admin' || parsed.role === 'store_admin'));
 
-          const cleanParsedPhone = parsed.phone ? String(parsed.phone).replace(/\D/g, '').slice(-10) : '';
-          const phoneMatch = cleanTargetPhone
-            ? (cleanParsedPhone === cleanTargetPhone)
-            : (options.role !== 'salesman');
+      const cleanParsedPhone = parsed.phone ? String(parsed.phone).replace(/\D/g, '').slice(-10) : '';
+      const phoneMatch = cleanTargetPhone
+        ? (cleanParsedPhone === cleanTargetPhone)
+        : (options.role !== 'salesman');
 
-          // Store scoping for admin notifications: super_admin always receives;
-          // store_admin only receives if their registered store matches the deal store.
-          // If a store_admin has no store recorded (legacy token), don't exclude them.
-          let storeMatch = true;
-          if (cleanStore && options.role === 'admin' && parsed.role === 'store_admin' && parsed.store) {
-            storeMatch = String(parsed.store).trim() === cleanStore;
-          }
+      let storeMatch = true;
+      if (cleanStore && options.role === 'admin' && parsed.role === 'store_admin' && parsed.store) {
+        storeMatch = String(parsed.store).trim() === cleanStore;
+      }
 
-          if (roleMatch && phoneMatch && storeMatch && parsed.token) {
-            targetTokens.push(parsed.token);
-          }
-        }
-      } catch (err) {
-        console.warn('Error reading token file', file.name, err);
+      if (roleMatch && phoneMatch && storeMatch && parsed.token) {
+        targetTokens.push(parsed.token);
       }
     }
 

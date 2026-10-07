@@ -30,7 +30,11 @@ export async function GET(request: Request) {
     const storeId = searchParams.get('storeId');
 
     const supabase = createServerSupabaseClient();
-    let query = supabase.from('leads').select('*').order('created_at', { ascending: false });
+    let query = supabase
+      .from('leads')
+      .select('id, store_id, customer_name, customer_phone, product_of_interest, interest_category, budget, follow_up_date, status, notes, created_at')
+      .order('created_at', { ascending: false })
+      .limit(250);
 
     if (storeId && storeId !== 'ALL') {
       const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
@@ -68,9 +72,7 @@ export async function GET(request: Request) {
       { success: true, leads },
       {
         headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
+          'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=60',
         }
       }
     );
