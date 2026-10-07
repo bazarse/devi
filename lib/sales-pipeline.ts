@@ -210,7 +210,7 @@ export async function fetchSalesPipelineDeals(filter?: { storeId?: string; statu
     if (filter?.salesmanPhone) params.set('salesmanPhone', filter.salesmanPhone);
     if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
 
-    const res = await fetch(`/api/deals/list?${params.toString()}`, { cache: 'no-store' });
+    const res = await fetch(`/api/deals/list?${params.toString()}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.deals)) {
       return data.deals.map((deal: any) => ({

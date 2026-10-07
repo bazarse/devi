@@ -59,7 +59,7 @@ export async function fetchCloudCustomers(storeId?: string): Promise<CustomerPro
     const params = new URLSearchParams();
     if (storeId && storeId !== 'ALL') params.set('storeId', storeId);
 
-    const res = await fetch(`/api/customers/list?${params.toString()}`, { cache: 'no-store' });
+    const res = await fetch(`/api/customers/list?${params.toString()}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.customers)) {
       return data.customers.map((c: any) => ({

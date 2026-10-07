@@ -28,7 +28,7 @@ export async function getStaffUsers(storeId?: string): Promise<StaffUser[]> {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams();
       if (storeId && storeId !== 'ALL') params.set('storeId', storeId);
-      const res = await fetch(`/api/staff/list?${params.toString()}`, { cache: 'no-store' });
+      const res = await fetch(`/api/staff/list?${params.toString()}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.staff)) {
         return json.staff;

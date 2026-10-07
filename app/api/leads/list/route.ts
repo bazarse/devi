@@ -28,13 +28,17 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get('storeId');
+    const limit = searchParams.get('limit');
 
     const supabase = createServerSupabaseClient();
     let query = supabase
       .from('leads')
       .select('id, store_id, customer_name, customer_phone, product_of_interest, interest_category, budget, follow_up_date, status, notes, created_at')
-      .order('created_at', { ascending: false })
-      .limit(250);
+      .order('created_at', { ascending: false });
+
+    if (limit && limit !== 'ALL' && !isNaN(Number(limit)) && Number(limit) > 0) {
+      query = query.limit(Number(limit));
+    }
 
     if (storeId && storeId !== 'ALL') {
       const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;

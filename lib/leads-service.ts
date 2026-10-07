@@ -28,7 +28,7 @@ export async function fetchCloudLeads(storeId?: string): Promise<CustomerLead[]>
     const params = new URLSearchParams();
     if (storeId && storeId !== 'ALL') params.set('storeId', storeId);
 
-    const res = await fetch(`/api/leads/list?${params.toString()}`, { cache: 'no-store' });
+    const res = await fetch(`/api/leads/list?${params.toString()}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.leads)) {
       return data.leads;

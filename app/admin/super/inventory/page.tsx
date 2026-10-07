@@ -88,7 +88,7 @@ export default function SuperAdminInventoryPage() {
   useEffect(() => {
     async function syncSoldDeals() {
       try {
-        const res = await fetch('/api/deals/list?status=approved', { cache: 'no-store' });
+        const res = await fetch('/api/deals/list?status=approved&limit=100');
         const data = await res.json();
         if (data.success && Array.isArray(data.deals) && data.deals.length > 0) {
           const soldImeis = new Set(data.deals.map((d: any) => (d.imeiSerial || '').trim().toLowerCase()));
