@@ -1,7 +1,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 
-const DEFAULT_SUPABASE_URL = "https://epthufuxulbthqmmnlxj.supabase.co";
-const DEFAULT_SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVwdGh1ZnV4dWxidGhxbW1ubHhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4NTAwNzgsImV4cCI6MjEwNTQyNjA3OH0.4rM7X99ygQLRAtQaw1eLLUUI0QMPjYNmWEFqKQrIGF4";
+const DEFAULT_SUPABASE_URL = "https://xawieklsfimtedlziida.supabase.co";
+const DEFAULT_SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhhd2lla2xzZmltdGVkbHppaWRhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzOTc3MjYsImV4cCI6MjEwNjk3MzcyNn0.n869MYTqqUIetdEz-2Db94TGTwP_sVy3VGT8fN98now";
 
 export function createClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
