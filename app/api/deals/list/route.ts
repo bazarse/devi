@@ -32,47 +32,75 @@ export async function GET(request: Request) {
 
     const supabase = createServerSupabaseClient();
 
-    let query = supabase
-      .from('sales_approvals')
-      .select('id, store_id, customer_name, customer_phone, customer_address, product_name, category, imei_serial, product_price, final_price, discount, payment_method, finance_provider, disbursement_amount, down_payment_cash, down_payment_upi, down_payment_card, cash_amount, upi_amount, card_amount, neft_amount, remark, has_device_exchange, device_name, device_imei, device_condition, device_exchange_amount, gifts, vas_details, sales_person_name, sales_person_phone, status, approved_by_name, approved_at, rejection_reason, created_at, updated_at, invoice_id, barcode')
-      .order('created_at', { ascending: false });
+    const columns = 'id, store_id, customer_name, customer_phone, customer_address, product_name, category, imei_serial, product_price, final_price, discount, payment_method, finance_provider, disbursement_amount, down_payment_cash, down_payment_upi, down_payment_card, cash_amount, upi_amount, card_amount, neft_amount, remark, has_device_exchange, device_name, device_imei, device_condition, device_exchange_amount, gifts, vas_details, sales_person_name, sales_person_phone, status, approved_by_name, approved_at, rejection_reason, created_at, updated_at, invoice_id, barcode';
+
+    let allRows: any[] = [];
 
     if (limit && limit !== 'ALL' && !isNaN(Number(limit)) && Number(limit) > 0) {
-      query = query.limit(Number(limit));
-    }
+      let query = supabase
+        .from('sales_approvals')
+        .select(columns)
+        .order('created_at', { ascending: false })
+        .limit(Number(limit));
 
-    if (storeId && storeId !== 'ALL') {
-      const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
-      query = query.eq('store_id', targetUuid);
-    }
-    if (status && status !== 'ALL') {
-      query = query.eq('status', status);
-    }
-    // Restrict to a single salesman's own deals (used for salesman role only).
-    if (salesmanPhone) {
-      const cleanSalesmanPhone = salesmanPhone.replace(/\D/g, '').slice(-10);
-      if (cleanSalesmanPhone.length === 10) {
-        query = query.eq('sales_person_phone', cleanSalesmanPhone);
+      if (storeId && storeId !== 'ALL') {
+        const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
+        query = query.eq('store_id', targetUuid);
+      }
+      if (status && status !== 'ALL') {
+        query = query.eq('status', status);
+      }
+      if (salesmanPhone) {
+        const cleanSalesmanPhone = salesmanPhone.replace(/\D/g, '').slice(-10);
+        if (cleanSalesmanPhone.length === 10) {
+          query = query.eq('sales_person_phone', cleanSalesmanPhone);
+        }
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Supabase fetch deals error:', error);
+        throw error;
+      }
+      allRows = data || [];
+    } else {
+      // Chunk-fetch in steps of 1000 to bypass PostgREST max-rows cap
+      let from = 0;
+      const step = 1000;
+      while (true) {
+        let chunkQuery = supabase
+          .from('sales_approvals')
+          .select(columns, { count: 'exact' })
+          .order('created_at', { ascending: false })
+          .range(from, from + step - 1);
+
+        if (storeId && storeId !== 'ALL') {
+          const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
+          chunkQuery = chunkQuery.eq('store_id', targetUuid);
+        }
+        if (status && status !== 'ALL') {
+          chunkQuery = chunkQuery.eq('status', status);
+        }
+        if (salesmanPhone) {
+          const cleanSalesmanPhone = salesmanPhone.replace(/\D/g, '').slice(-10);
+          if (cleanSalesmanPhone.length === 10) {
+            chunkQuery = chunkQuery.eq('sales_person_phone', cleanSalesmanPhone);
+          }
+        }
+
+        const { data, count, error } = await chunkQuery;
+        if (error) {
+          console.error('Supabase chunk fetch deals error:', error);
+          throw error;
+        }
+        if (!data || data.length === 0) break;
+        allRows.push(...data);
+        if (data.length < step || (count && allRows.length >= count)) break;
+        from += step;
       }
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Supabase fetch deals error:', error);
-      return NextResponse.json(
-        { success: false, deals: [] },
-        {
-          status: 500,
-          headers: {
-            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-            'Surrogate-Control': 'no-store'
-          }
-        }
-      );
-    }
+    const data = allRows;
 
     const deals = (data || []).map((row: any) => {
       const storeCode = UUID_TO_STORE_CODE[row.store_id] || (row.store_id?.includes('7705') ? 'DM-02' : 'DM-01');

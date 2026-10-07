@@ -21,18 +21,32 @@ export async function GET(request: Request) {
     const storeId = searchParams.get('storeId');
 
     const supabase = createServerSupabaseClient();
-    let query = supabase.from('customers').select('id, name, phone, address, credit_balance, total_spent, created_at, updated_at, primary_store_id').order('updated_at', { ascending: false });
+    let allCustomers: any[] = [];
+    let from = 0;
+    const step = 1000;
+    while (true) {
+      let chunkQuery = supabase
+        .from('customers')
+        .select('id, name, phone, address, credit_balance, total_spent, created_at, updated_at, primary_store_id', { count: 'exact' })
+        .order('updated_at', { ascending: false })
+        .range(from, from + step - 1);
 
-    if (storeId && storeId !== 'ALL') {
-      const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
-      query = query.eq('primary_store_id', targetUuid);
-    }
+      if (storeId && storeId !== 'ALL') {
+        const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
+        chunkQuery = chunkQuery.eq('primary_store_id', targetUuid);
+      }
 
-    const { data, error } = await query;
-    if (error) {
-      console.error('Supabase fetch customers error:', error);
-      return NextResponse.json({ success: false, customers: [] }, { status: 500 });
+      const { data: chunkData, count, error } = await chunkQuery;
+      if (error) {
+        console.error('Supabase fetch customers error:', error);
+        return NextResponse.json({ success: false, customers: [] }, { status: 500 });
+      }
+      if (!chunkData || chunkData.length === 0) break;
+      allCustomers.push(...chunkData);
+      if (chunkData.length < step || (count && allCustomers.length >= count)) break;
+      from += step;
     }
+    const data = allCustomers;
 
     // Fetch approved deals and leads for 360 CRM customer profile aggregation (selective column projection)
     const normalizePhone = (p?: string | null) => (p ? String(p).replace(/\D/g, '').slice(-10) : '');
