@@ -20,21 +20,33 @@ export interface StaffUser {
 // local cache and no hardcoded fallback directory — this prevents deleted or
 // deactivated users from lingering on any device.
 
+const clientStaffCache = new Map<string, { timestamp: number; staff: StaffUser[] }>();
+const CLIENT_STAFF_TTL = 45000; // 45 seconds
+
+export function invalidateClientStaffCache() {
+  clientStaffCache.clear();
+}
+
 // Fetch all staff users STRICTLY from Supabase (via /api/staff/list on the
-// client, or a direct query on the server). No local cache / no hardcoded
-// fallback: the directory always reflects the live Supabase `profiles` table.
+// client, or a direct query on the server).
 export async function getStaffUsers(storeId?: string): Promise<StaffUser[]> {
   try {
     if (typeof window !== 'undefined') {
+      const cacheKey = storeId || 'ALL';
+      const now = Date.now();
+      const cached = clientStaffCache.get(cacheKey);
+      if (cached && (now - cached.timestamp < CLIENT_STAFF_TTL)) {
+        return cached.staff;
+      }
+
       const params = new URLSearchParams();
       if (storeId && storeId !== 'ALL') params.set('storeId', storeId);
       const res = await fetch(`/api/staff/list?${params.toString()}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.staff)) {
+        clientStaffCache.set(cacheKey, { timestamp: now, staff: json.staff });
         return json.staff;
       }
-      // API reachable but returned an error -> surface an empty directory
-      // rather than stale local data.
       return [];
     }
 
@@ -91,6 +103,7 @@ export async function createStaffAccount(staff: Omit<StaffUser, 'id'>): Promise<
 
   const resData = await res.json();
   if (res.ok && resData.success && resData.staff) {
+    invalidateClientStaffCache();
     return resData.staff as StaffUser;
   }
 
@@ -109,7 +122,11 @@ export async function updateStaffPasscode(phone: string, newPin: string): Promis
       body: JSON.stringify({ phone: cleanPhone, newPin: cleanPin }),
     });
     const data = await res.json();
-    return res.ok && data.success === true;
+    if (res.ok && data.success === true) {
+      invalidateClientStaffCache();
+      return true;
+    }
+    return false;
   } catch (err) {
     console.warn('Failed to update PIN via API:', err);
     return false;
@@ -128,7 +145,11 @@ export async function toggleStaffActive(phone: string, isActive: boolean): Promi
       body: JSON.stringify({ phone: cleanPhone, isActive }),
     });
     const data = await res.json();
-    return res.ok && data.success === true;
+    if (res.ok && data.success === true) {
+      invalidateClientStaffCache();
+      return true;
+    }
+    return false;
   } catch (err) {
     console.warn('Failed to toggle active status via API:', err);
     return false;
@@ -145,7 +166,11 @@ export async function deleteStaffAccount(phoneOrId: string): Promise<boolean> {
       body: JSON.stringify({ phoneOrId }),
     });
     const data = await res.json();
-    return res.ok && data.success === true;
+    if (res.ok && data.success === true) {
+      invalidateClientStaffCache();
+      return true;
+    }
+    return false;
   } catch (err) {
     console.warn('API staff delete failed:', err);
     return false;

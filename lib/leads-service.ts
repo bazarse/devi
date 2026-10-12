@@ -20,17 +20,32 @@ export interface CustomerLead {
 
 const LEADS_EVENT = 'devi_leads_updated';
 
+const clientLeadsCache = new Map<string, { timestamp: number; leads: CustomerLead[] }>();
+const CLIENT_LEADS_TTL = 45000; // 45 seconds
+
+export function invalidateClientLeadsCache() {
+  clientLeadsCache.clear();
+}
+
 /**
  * Fetch Leads directly from Supabase Cloud
  */
 export async function fetchCloudLeads(storeId?: string): Promise<CustomerLead[]> {
   try {
+    const cacheKey = storeId || 'ALL';
+    const now = Date.now();
+    const cached = clientLeadsCache.get(cacheKey);
+    if (cached && (now - cached.timestamp < CLIENT_LEADS_TTL)) {
+      return cached.leads;
+    }
+
     const params = new URLSearchParams();
     if (storeId && storeId !== 'ALL') params.set('storeId', storeId);
 
     const res = await fetch(`/api/leads/list?${params.toString()}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.leads)) {
+      clientLeadsCache.set(cacheKey, { timestamp: now, leads: data.leads });
       return data.leads;
     }
     return [];
@@ -76,6 +91,7 @@ export async function saveNewLead(lead: Omit<CustomerLead, 'id' | 'token' | 'cre
   }
 
   if (typeof window !== 'undefined') {
+    invalidateClientLeadsCache();
     window.dispatchEvent(new CustomEvent(LEADS_EVENT));
   }
 
@@ -97,6 +113,7 @@ export async function updateLeadStatus(id: string, newStatus: CustomerLead['stat
   }
 
   if (typeof window !== 'undefined') {
+    invalidateClientLeadsCache();
     window.dispatchEvent(new CustomEvent(LEADS_EVENT));
   }
 }
@@ -116,13 +133,17 @@ export async function deleteLead(id: string): Promise<void> {
   }
 
   if (typeof window !== 'undefined') {
+    invalidateClientLeadsCache();
     window.dispatchEvent(new CustomEvent(LEADS_EVENT));
   }
 }
 
 export function subscribeToLeads(callback: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
-  const handler = () => callback();
+  const handler = () => {
+    invalidateClientLeadsCache();
+    callback();
+  };
   window.addEventListener(LEADS_EVENT, handler);
   return () => {
     window.removeEventListener(LEADS_EVENT, handler);

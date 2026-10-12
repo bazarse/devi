@@ -51,18 +51,33 @@ export interface CustomerProfile {
 
 const CUSTOMERS_EVENT_NAME = 'devi_customers_updated';
 
+// In-memory cache for client customer profile lookups
+const clientCustomersCache = new Map<string, { timestamp: number; customers: CustomerProfile[] }>();
+const CLIENT_CUSTOMERS_TTL = 45000; // 45 seconds
+
+export function invalidateClientCustomersCache() {
+  clientCustomersCache.clear();
+}
+
 /**
  * Fetch all customers directly from Cloud Supabase database
  */
 export async function fetchCloudCustomers(storeId?: string): Promise<CustomerProfile[]> {
   try {
+    const cacheKey = storeId || 'ALL';
+    const now = Date.now();
+    const cached = clientCustomersCache.get(cacheKey);
+    if (cached && (now - cached.timestamp < CLIENT_CUSTOMERS_TTL)) {
+      return cached.customers;
+    }
+
     const params = new URLSearchParams();
     if (storeId && storeId !== 'ALL') params.set('storeId', storeId);
 
     const res = await fetch(`/api/customers/list?${params.toString()}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.customers)) {
-      return data.customers.map((c: any) => ({
+      const mapped = data.customers.map((c: any) => ({
         ...c,
         purchases: Array.isArray(c.purchases) ? c.purchases : [],
         leads: Array.isArray(c.leads) ? c.leads : [],
@@ -70,6 +85,9 @@ export async function fetchCloudCustomers(storeId?: string): Promise<CustomerPro
         firstSeen: c.createdAt || c.firstSeen,
         lastPurchaseDate: c.lastPurchaseDate || c.updatedAt
       }));
+
+      clientCustomersCache.set(cacheKey, { timestamp: now, customers: mapped });
+      return mapped;
     }
     return [];
   } catch (err) {
@@ -115,6 +133,7 @@ export async function upsertCustomerFromSale(deal: {
     });
 
     if (typeof window !== 'undefined') {
+      invalidateClientCustomersCache();
       window.dispatchEvent(new CustomEvent(CUSTOMERS_EVENT_NAME));
     }
   } catch (err) {
@@ -124,13 +143,17 @@ export async function upsertCustomerFromSale(deal: {
 
 export function subscribeToCustomers(callback: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
-  const handler = () => callback();
+  const handler = () => {
+    invalidateClientCustomersCache();
+    callback();
+  };
   window.addEventListener(CUSTOMERS_EVENT_NAME, handler);
 
   let bc: BroadcastChannel | null = null;
   try {
     bc = new BroadcastChannel('devi_customers_broadcast');
     bc.onmessage = () => {
+      invalidateClientCustomersCache();
       callback();
     };
   } catch (_) {}
@@ -158,6 +181,7 @@ export async function deleteCustomer(customerId: string, phone?: string): Promis
     const data = await res.json();
     if (data.success) {
       if (typeof window !== 'undefined') {
+        invalidateClientCustomersCache();
         window.dispatchEvent(new CustomEvent(CUSTOMERS_EVENT_NAME));
         try {
           const bc = new BroadcastChannel('devi_customers_broadcast');
@@ -193,6 +217,7 @@ export async function getCustomerById(id: string): Promise<CustomerProfile | nul
 
 export async function saveCustomer(cust: CustomerProfile): Promise<void> {
   try {
+    invalidateClientCustomersCache();
     await fetch('/api/customers/upsert', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

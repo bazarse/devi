@@ -204,7 +204,7 @@ export function getAllBrands(): string[] {
 // Central fetch from Supabase (all devices share this). Falls back to cache/base.
 export async function fetchAllBrands(): Promise<string[]> {
   try {
-    const res = await fetch('/api/brands', { cache: 'no-store' });
+    const res = await fetch('/api/brands');
     const json = await res.json();
     if (json.success && Array.isArray(json.brands)) {
       const detailed = getStoredBrandDetails().map(b => b.name);

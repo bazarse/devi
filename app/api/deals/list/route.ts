@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-export const fetchCache = 'force-no-store';
 
 const STORE_NAME_MAP: Record<string, string> = {
   'DM-01': 'Store DM-01 (Kanthal Chauraha - Flagship)',
@@ -22,6 +20,62 @@ const UUID_TO_STORE_CODE: Record<string, string> = {
   '7705c16a-2e91-4ef5-93bc-00084848db6a': 'DM-02'
 };
 
+// Warm in-memory cache for repeated deal queries within a serverless instance
+const dealsServerCache = new Map<string, { timestamp: number; deals: any[] }>();
+const SERVER_CACHE_TTL = 15000; // 15 seconds warm cache for non-pending queries
+
+function mapDeals(rows: any[]) {
+  return (rows || []).map((row: any) => {
+    const storeCode = UUID_TO_STORE_CODE[row.store_id] || (row.store_id?.includes('7705') ? 'DM-02' : 'DM-01');
+    return {
+      id: row.id,
+      token: `SA-${row.id.slice(0, 6)}`,
+      storeId: storeCode,
+      storeName: STORE_NAME_MAP[storeCode] || `Store ${storeCode}`,
+      customerName: row.customer_name,
+      customerPhone: row.customer_phone,
+      customerAddress: row.customer_address,
+      productName: row.product_name,
+      category: row.category || 'Mobile Phone',
+      imeiSerial: row.imei_serial,
+      basePrice: Number(row.product_price) || Number(row.final_price) || 0,
+      discount: Number(row.discount) || 0,
+      finalPrice: Number(row.final_price) || 0,
+      paymentMethod: row.payment_method || 'Cash',
+      financeProvider: row.finance_provider,
+      disbursementAmount: Number(row.disbursement_amount) || 0,
+      downPaymentCash: Number(row.down_payment_cash) || 0,
+      downPaymentUpi: Number(row.down_payment_upi) || 0,
+      downPaymentCard: Number(row.down_payment_card) || 0,
+      cashAmount: Number(row.cash_amount) || 0,
+      upiAmount: Number(row.upi_amount) || 0,
+      cardAmount: Number(row.card_amount) || 0,
+      neftAmount: Number(row.neft_amount) || 0,
+      remark: row.remark || null,
+      hasExchange: Boolean(row.has_device_exchange),
+      oldDeviceName: row.device_name,
+      oldDeviceImei: row.device_imei,
+      oldDeviceCondition: row.device_condition,
+      exchangeValue: Number(row.device_exchange_amount) || 0,
+      gifts: Array.isArray(row.gifts) ? row.gifts.join(', ') : (row.gifts || 'None'),
+      vasPlan: row.vas_details || 'None',
+      salesPersonName: row.sales_person_name || 'Floor Salesman',
+      salesPersonPhone: row.sales_person_phone,
+      status: row.status,
+      decidedBy: row.approved_by_name,
+      decidedAt: row.approved_at,
+      rejectionReason: row.rejection_reason,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      submittedAt: row.created_at,
+      billNumber: row.invoice_id || (row.id ? `25-26/${row.id.slice(0, 6)}/DEVI` : undefined),
+      isTallyUploaded: Boolean((row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) || (row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED'))),
+      tallyUploadedAt: (row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) ? row.barcode.split(':')[1] : ((row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED')) ? row.invoice_id.split(':')[1] : undefined),
+      tallyUploadedBy: (row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) ? row.barcode.split(':')[2] : ((row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED')) ? row.invoice_id.split(':')[2] : undefined)
+    };
+  });
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -31,9 +85,63 @@ export async function GET(request: Request) {
     const limit = searchParams.get('limit');
 
     const supabase = createServerSupabaseClient();
-
     const columns = 'id, store_id, customer_name, customer_phone, customer_address, product_name, category, imei_serial, product_price, final_price, discount, payment_method, finance_provider, disbursement_amount, down_payment_cash, down_payment_upi, down_payment_card, cash_amount, upi_amount, card_amount, neft_amount, remark, has_device_exchange, device_name, device_imei, device_condition, device_exchange_amount, gifts, vas_details, sales_person_name, sales_person_phone, status, approved_by_name, approved_at, rejection_reason, created_at, updated_at, invoice_id, barcode';
 
+    // 1. FAST-PATH: Pending deals for Approvals screen (100% Realtime, Never Cached, Max 100 rows)
+    if (status === 'pending_approval') {
+      let query = supabase
+        .from('sales_approvals')
+        .select(columns)
+        .eq('status', 'pending_approval')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (storeId && storeId !== 'ALL') {
+        const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
+        query = query.eq('store_id', targetUuid);
+      }
+      if (salesmanPhone) {
+        const cleanSalesmanPhone = salesmanPhone.replace(/\D/g, '').slice(-10);
+        if (cleanSalesmanPhone.length === 10) {
+          query = query.eq('sales_person_phone', cleanSalesmanPhone);
+        }
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('Supabase fetch pending deals error:', error);
+        throw error;
+      }
+
+      const deals = mapDeals(data || []);
+      return NextResponse.json(
+        { success: true, deals },
+        {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+          }
+        }
+      );
+    }
+
+    // 2. Check Warm Server Memory Cache for non-pending queries
+    const cacheKey = `${storeId || 'ALL'}_${status || 'ALL'}_${salesmanPhone || 'ALL'}_${limit || 'ALL'}`;
+    const now = Date.now();
+    const cached = dealsServerCache.get(cacheKey);
+    if (cached && (now - cached.timestamp < SERVER_CACHE_TTL)) {
+      return NextResponse.json(
+        { success: true, deals: cached.deals },
+        {
+          headers: {
+            'Cache-Control': 'public, s-maxage=20, stale-while-revalidate=60',
+          }
+        }
+      );
+    }
+
+    // 3. Query Execution for non-pending queries
     let allRows: any[] = [];
 
     if (limit && limit !== 'ALL' && !isNaN(Number(limit)) && Number(limit) > 0) {
@@ -100,64 +208,20 @@ export async function GET(request: Request) {
       }
     }
 
-    const data = allRows;
+    const deals = mapDeals(allRows);
 
-    const deals = (data || []).map((row: any) => {
-      const storeCode = UUID_TO_STORE_CODE[row.store_id] || (row.store_id?.includes('7705') ? 'DM-02' : 'DM-01');
-      return {
-        id: row.id,
-        token: `SA-${row.id.slice(0, 6)}`,
-        storeId: storeCode,
-        storeName: STORE_NAME_MAP[storeCode] || `Store ${storeCode}`,
-        customerName: row.customer_name,
-        customerPhone: row.customer_phone,
-        customerAddress: row.customer_address,
-        productName: row.product_name,
-        category: row.category || 'Mobile Phone',
-        imeiSerial: row.imei_serial,
-        basePrice: Number(row.product_price) || Number(row.final_price) || 0,
-        discount: Number(row.discount) || 0,
-        finalPrice: Number(row.final_price) || 0,
-        paymentMethod: row.payment_method || 'Cash',
-        financeProvider: row.finance_provider,
-        disbursementAmount: Number(row.disbursement_amount) || 0,
-        downPaymentCash: Number(row.down_payment_cash) || 0,
-        downPaymentUpi: Number(row.down_payment_upi) || 0,
-        downPaymentCard: Number(row.down_payment_card) || 0,
-        cashAmount: Number(row.cash_amount) || 0,
-        upiAmount: Number(row.upi_amount) || 0,
-        cardAmount: Number(row.card_amount) || 0,
-        neftAmount: Number(row.neft_amount) || 0,
-        remark: row.remark || null,
-        hasExchange: Boolean(row.has_device_exchange),
-        oldDeviceName: row.device_name,
-        oldDeviceImei: row.device_imei,
-        oldDeviceCondition: row.device_condition,
-        exchangeValue: Number(row.device_exchange_amount) || 0,
-        gifts: Array.isArray(row.gifts) ? row.gifts.join(', ') : (row.gifts || 'None'),
-        vasPlan: row.vas_details || 'None',
-        salesPersonName: row.sales_person_name || 'Floor Salesman',
-        salesPersonPhone: row.sales_person_phone,
-        status: row.status,
-        decidedBy: row.approved_by_name,
-        decidedAt: row.approved_at,
-        rejectionReason: row.rejection_reason,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        submittedAt: row.created_at,
-        billNumber: row.invoice_id || (row.id ? `25-26/${row.id.slice(0, 6)}/DEVI` : undefined),
-        isTallyUploaded: Boolean((row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) || (row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED'))),
-        tallyUploadedAt: (row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) ? row.barcode.split(':')[1] : ((row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED')) ? row.invoice_id.split(':')[1] : undefined),
-        tallyUploadedBy: (row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) ? row.barcode.split(':')[2] : ((row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED')) ? row.invoice_id.split(':')[2] : undefined)
-      };
-    });
-
+    // Save in warm cache
+    dealsServerCache.set(cacheKey, { timestamp: now, deals });
+    if (dealsServerCache.size > 50) {
+      const oldestKey = dealsServerCache.keys().next().value;
+      if (oldestKey) dealsServerCache.delete(oldestKey);
+    }
 
     return NextResponse.json(
       { success: true, deals },
       {
         headers: {
-          'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=30',
+          'Cache-Control': 'public, s-maxage=20, stale-while-revalidate=60',
         }
       }
     );

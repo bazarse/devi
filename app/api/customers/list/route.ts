@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-export const fetchCache = 'force-no-store';
 
 const STORE_CODE_TO_UUID: Record<string, string> = {
   'DM-01': '3be59f85-2859-476c-b402-31c552a83146',
@@ -15,10 +13,28 @@ const UUID_TO_STORE_CODE: Record<string, string> = {
   '7705c16a-2e91-4ef5-93bc-00084848db6a': 'DM-02'
 };
 
+// Warm in-memory cache to save CPU on customer list
+const customersServerCache = new Map<string, { timestamp: number; customers: any[] }>();
+const SERVER_CUSTOMERS_TTL = 30000; // 30 seconds
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get('storeId');
+
+    const cacheKey = storeId || 'ALL';
+    const now = Date.now();
+    const cached = customersServerCache.get(cacheKey);
+    if (cached && (now - cached.timestamp < SERVER_CUSTOMERS_TTL)) {
+      return NextResponse.json(
+        { success: true, customers: cached.customers },
+        {
+          headers: {
+            'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
+          }
+        }
+      );
+    }
 
     const supabase = createServerSupabaseClient();
     let allCustomers: any[] = [];
@@ -165,11 +181,17 @@ export async function GET(request: Request) {
       };
     });
 
+    customersServerCache.set(cacheKey, { timestamp: now, customers });
+    if (customersServerCache.size > 20) {
+      const oldest = customersServerCache.keys().next().value;
+      if (oldest) customersServerCache.delete(oldest);
+    }
+
     return NextResponse.json(
       { success: true, customers },
       {
         headers: {
-          'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=60',
+          'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
         }
       }
     );

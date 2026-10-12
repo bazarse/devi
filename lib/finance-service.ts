@@ -293,7 +293,7 @@ export async function getStoreFinanceProviders(storeId: string): Promise<Finance
   const store = storeId && storeId !== 'ALL' ? storeId : '';
   try {
     const qs = store ? `?storeId=${encodeURIComponent(store)}` : '';
-    const res = await fetch(`/api/finance-providers${qs}`, { cache: 'no-store' });
+    const res = await fetch(`/api/finance-providers${qs}`);
     const json = await res.json();
     if (json.success && Array.isArray(json.providers) && json.providers.length > 0) {
       if (store) cacheStore(store, json.providers);

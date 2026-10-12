@@ -2,18 +2,29 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-export const fetchCache = 'force-no-store';
 
 const STORE_UUID_TO_CODE: Record<string, string> = {
   '3be59f85-2859-476c-b402-31c552a83146': 'DM-01',
   '7705c16a-2e91-4ef5-93bc-00084848db6a': 'DM-02'
 };
 
+const staffServerCache = new Map<string, { timestamp: number; staff: any[] }>();
+const SERVER_STAFF_TTL = 30000; // 30 seconds
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get('storeId');
+
+    const cacheKey = storeId || 'ALL';
+    const now = Date.now();
+    const cached = staffServerCache.get(cacheKey);
+    if (cached && (now - cached.timestamp < SERVER_STAFF_TTL)) {
+      return NextResponse.json(
+        { success: true, staff: cached.staff },
+        { headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } }
+      );
+    }
 
     const supabase = createServerSupabaseClient();
     let query = supabase
@@ -56,9 +67,15 @@ export async function GET(request: Request) {
       };
     });
 
+    staffServerCache.set(cacheKey, { timestamp: now, staff });
+    if (staffServerCache.size > 10) {
+      const oldest = staffServerCache.keys().next().value;
+      if (oldest) staffServerCache.delete(oldest);
+    }
+
     return NextResponse.json(
       { success: true, staff },
-      { headers: { 'Cache-Control': 'public, max-age=30, s-maxage=60, stale-while-revalidate=120' } }
+      { headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } }
     );
   } catch (err: any) {
     console.error('Server error in staff list route:', err);

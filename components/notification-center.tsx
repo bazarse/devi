@@ -187,8 +187,9 @@ export default function NotificationCenter({ userRole, userPhone, userStoreId }:
     let lastSyncTimestamp = 0;
     async function syncMissedNotifications(force = false) {
       const rightNow = Date.now();
-      if (!force && rightNow - lastSyncTimestamp < 30000) {
-        return; // Skip if synced within the last 30 seconds
+      const requiredCooldown = force ? 15000 : 120000; // 15s when triggered by event, 2 min when idle
+      if (rightNow - lastSyncTimestamp < requiredCooldown) {
+        return;
       }
       lastSyncTimestamp = rightNow;
 
@@ -203,9 +204,9 @@ export default function NotificationCenter({ userRole, userPhone, userStoreId }:
           } else if (role === 'store_admin' && userStoreId) {
             queryParams.set('storeId', userStoreId);
           }
-          queryParams.set('limit', '25');
+          queryParams.set('limit', '15');
           const fetchUrl = `/api/deals/list?${queryParams.toString()}`;
-          const res = await fetch(fetchUrl, { cache: 'no-store' });
+          const res = await fetch(fetchUrl);
           if (res.ok) {
             const json = await res.json();
             if (json && Array.isArray(json.deals)) {
@@ -411,15 +412,6 @@ export default function NotificationCenter({ userRole, userPhone, userStoreId }:
 
     syncMissedNotifications();
 
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && !document.hidden) {
-        syncMissedNotifications();
-      }
-    };
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-    }
-
     const unsubPipeline = subscribeToPipeline(() => {
       syncMissedNotifications(true);
     });
@@ -453,9 +445,6 @@ export default function NotificationCenter({ userRole, userPhone, userStoreId }:
     // 3. Cleanup listeners on unmount
     return () => {
       unsubPipeline();
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-      }
       window.removeEventListener('devi_notification_received' as any, handleReceived);
       window.removeEventListener('devi_notifications_updated' as any, handleUpdated);
       if (bc) bc.close();

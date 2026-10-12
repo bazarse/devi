@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-export const fetchCache = 'force-no-store';
 
 const STORE_CODE_TO_UUID: Record<string, string> = {
   'DM-01': '3be59f85-2859-476c-b402-31c552a83146',
@@ -24,11 +22,28 @@ const STATUS_DB_TO_UI: Record<string, string> = {
   'Not_Interested': 'Lost'
 };
 
+const leadsServerCache = new Map<string, { timestamp: number; leads: any[] }>();
+const SERVER_LEADS_TTL = 20000; // 20 seconds
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get('storeId');
     const limit = searchParams.get('limit');
+
+    const cacheKey = `${storeId || 'ALL'}_${limit || 'ALL'}`;
+    const now = Date.now();
+    const cached = leadsServerCache.get(cacheKey);
+    if (cached && (now - cached.timestamp < SERVER_LEADS_TTL)) {
+      return NextResponse.json(
+        { success: true, leads: cached.leads },
+        {
+          headers: {
+            'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
+          }
+        }
+      );
+    }
 
     const supabase = createServerSupabaseClient();
     let query = supabase
@@ -72,11 +87,17 @@ export async function GET(request: Request) {
       };
     });
 
+    leadsServerCache.set(cacheKey, { timestamp: now, leads });
+    if (leadsServerCache.size > 20) {
+      const oldest = leadsServerCache.keys().next().value;
+      if (oldest) leadsServerCache.delete(oldest);
+    }
+
     return NextResponse.json(
       { success: true, leads },
       {
         headers: {
-          'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=60',
+          'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
         }
       }
     );

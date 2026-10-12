@@ -72,10 +72,19 @@ export const UUID_TO_STORE_CODE: Record<string, string> = {
 
 const PIPELINE_EVENT_NAME = 'devi_pipeline_updated';
 
+// Client-side in-memory cache for bills & deals to eliminate redundant Vercel CPU execution
+const clientDealsCache = new Map<string, { timestamp: number; deals: SalesDeal[] }>();
+const CLIENT_CACHE_TTL = 45000; // 45 seconds
+
+export function invalidateClientDealsCache() {
+  clientDealsCache.clear();
+}
+
 // Broadcast event to notify UI components
-function broadcastPipelineUpdate() {
+export function broadcastPipelineUpdate() {
   if (typeof window === 'undefined') return;
   try {
+    invalidateClientDealsCache();
     window.dispatchEvent(new CustomEvent(PIPELINE_EVENT_NAME));
     if ('BroadcastChannel' in window) {
       const channel = new BroadcastChannel('devi_pipeline_channel');
@@ -204,6 +213,18 @@ export async function submitSaleDeal(dealData: Omit<SalesDeal, 'id' | 'submitted
  */
 export async function fetchSalesPipelineDeals(filter?: { storeId?: string; status?: string; salesmanPhone?: string; limit?: number | string }): Promise<SalesDeal[]> {
   try {
+    const isPending = filter?.status === 'pending_approval';
+    const cacheKey = JSON.stringify(filter || {});
+    const now = Date.now();
+
+    // Pending approvals always bypass client cache to remain 100% live/instant
+    if (!isPending) {
+      const cached = clientDealsCache.get(cacheKey);
+      if (cached && (now - cached.timestamp < CLIENT_CACHE_TTL)) {
+        return cached.deals;
+      }
+    }
+
     const params = new URLSearchParams();
     if (filter?.storeId) params.set('storeId', filter.storeId);
     if (filter?.status) params.set('status', filter.status);
@@ -213,10 +234,20 @@ export async function fetchSalesPipelineDeals(filter?: { storeId?: string; statu
     const res = await fetch(`/api/deals/list?${params.toString()}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.deals)) {
-      return data.deals.map((deal: any) => ({
+      const mapped = data.deals.map((deal: any) => ({
         ...deal,
         storeName: STORE_NAME_MAP[deal.storeId] || deal.storeName || `Store ${deal.storeId}`
       }));
+
+      if (!isPending) {
+        clientDealsCache.set(cacheKey, { timestamp: now, deals: mapped });
+        if (clientDealsCache.size > 20) {
+          const firstKey = clientDealsCache.keys().next().value;
+          if (firstKey) clientDealsCache.delete(firstKey);
+        }
+      }
+
+      return mapped;
     }
     return [];
   } catch (err) {
@@ -272,10 +303,15 @@ export async function updateDealStatusInPipeline(
 /**
  * 5. SUBSCRIBE TO PIPELINE UPDATES
  */
+let lastPipelineVisibilitySync = 0;
+
 export function subscribeToPipeline(onUpdate: () => void): () => void {
   if (typeof window === 'undefined') return () => {};
 
-  const handleCustomEvent = () => onUpdate();
+  const handleCustomEvent = () => {
+    invalidateClientDealsCache();
+    onUpdate();
+  };
   window.addEventListener(PIPELINE_EVENT_NAME, handleCustomEvent);
   window.addEventListener('devi_notification_received', handleCustomEvent);
 
@@ -283,16 +319,24 @@ export function subscribeToPipeline(onUpdate: () => void): () => void {
   if ('BroadcastChannel' in window) {
     try {
       broadcastChannel = new BroadcastChannel('devi_pipeline_channel');
-      broadcastChannel.onmessage = () => onUpdate();
+      broadcastChannel.onmessage = () => {
+        invalidateClientDealsCache();
+        onUpdate();
+      };
     } catch (e) {}
   }
 
   // Note: Instant real-time updates are driven by Push Notifications (devi_notification_received),
-  // Cross-tab BroadcastChannel, and visibilitychange event when user focuses the tab.
-  // Aggressive setInterval polling is disabled to preserve 100% free Supabase bandwidth quota.
+  // Cross-tab BroadcastChannel, and throttled visibilitychange event.
+  // 2-minute cooldown prevents rapid tab switches / screen locks from spamming Vercel CPU.
   const handleVisibilityChange = () => {
     if (typeof document !== 'undefined' && !document.hidden) {
-      onUpdate();
+      const now = Date.now();
+      if (now - lastPipelineVisibilitySync >= 120000) {
+        lastPipelineVisibilitySync = now;
+        invalidateClientDealsCache();
+        onUpdate();
+      }
     }
   };
   if (typeof document !== 'undefined') {
