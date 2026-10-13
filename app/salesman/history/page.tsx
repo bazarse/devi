@@ -19,7 +19,8 @@ import {
   Gift,
   ShieldCheck,
   AlertTriangle,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { formatINR, formatDateTime } from '@/lib/utils';
 import InvoiceModal from '@/components/invoice-modal';
@@ -48,6 +49,38 @@ export default function SalesmanHistoryPage() {
   // Reminders Track State
   const [remindedIds, setRemindedIds] = useState<Record<string, boolean>>({});
   const [reminderToast, setReminderToast] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const role = sessionStorage.getItem('devi_user_role') || localStorage.getItem('devi_user_role');
+      const myPhone = (sessionStorage.getItem('devi_user_phone') || localStorage.getItem('devi_user_phone') || '')
+        .replace(/\D/g, '')
+        .slice(-10);
+      const myStore = (sessionStorage.getItem('devi_store_id') || localStorage.getItem('devi_store_id') || '') === 'DM-02' ? 'DM-02' : 'DM-01';
+
+      let filter: { salesmanPhone?: string; storeId?: string } | undefined;
+      if (role === 'salesman') {
+        const targetPhone = myPhone.length === 10 ? myPhone : '0000000000';
+        filter = { salesmanPhone: targetPhone };
+      } else if (role === 'store_admin') {
+        filter = { storeId: myStore };
+      }
+
+      const deals = await fetchSalesPipelineDeals(filter);
+      if (role === 'salesman') {
+        const strictlyMine = myPhone.length === 10 
+          ? deals.filter(d => (d.salesPersonPhone || '').replace(/\D/g, '').slice(-10) === myPhone)
+          : [];
+        setSalesList(strictlyMine);
+      } else {
+        setSalesList(deals);
+      }
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 400);
+    }
+  };
 
   // Real-time Pipeline Subscription
   useEffect(() => {
@@ -195,13 +228,24 @@ export default function SalesmanHistoryPage() {
           </div>
         </div>
 
-        <Link
-          href="/pos"
-          className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-brand-500/25 active:scale-95 transition-all min-h-[44px]"
-        >
-          <ShoppingBag className="w-4 h-4" />
-          <span>+ Create New Sale</span>
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-bold border border-slate-200 shadow-sm active:scale-95 transition-all min-h-[44px]"
+            title="Refresh My Deals"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-brand-600' : 'text-slate-500'}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+          <Link
+            href="/pos"
+            className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-brand-500/25 active:scale-95 transition-all min-h-[44px]"
+          >
+            <ShoppingBag className="w-4 h-4" />
+            <span>+ Create New Sale</span>
+          </Link>
+        </div>
       </div>
 
       {/* KPI Cards */}

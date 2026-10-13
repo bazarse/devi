@@ -72,12 +72,11 @@ export const UUID_TO_STORE_CODE: Record<string, string> = {
 
 const PIPELINE_EVENT_NAME = 'devi_pipeline_updated';
 
-// Client-side in-memory cache for bills & deals to eliminate redundant Vercel CPU execution
-const clientDealsCache = new Map<string, { timestamp: number; deals: SalesDeal[] }>();
-const CLIENT_CACHE_TTL = 45000; // 45 seconds
+// In-flight request deduplication: eliminates duplicate simultaneous requests without stale caching
+const inFlightRequests = new Map<string, Promise<SalesDeal[]>>();
 
 export function invalidateClientDealsCache() {
-  clientDealsCache.clear();
+  inFlightRequests.clear();
 }
 
 // Broadcast event to notify UI components
@@ -212,48 +211,46 @@ export async function submitSaleDeal(dealData: Omit<SalesDeal, 'id' | 'submitted
  * 3. FETCH SALES PIPELINE DEALS (100% PURE CLOUD SUPABASE)
  */
 export async function fetchSalesPipelineDeals(filter?: { storeId?: string; status?: string; salesmanPhone?: string; limit?: number | string }): Promise<SalesDeal[]> {
-  try {
-    const isPending = filter?.status === 'pending_approval';
-    const cacheKey = JSON.stringify(filter || {});
-    const now = Date.now();
-
-    // Pending approvals always bypass client cache to remain 100% live/instant
-    if (!isPending) {
-      const cached = clientDealsCache.get(cacheKey);
-      if (cached && (now - cached.timestamp < CLIENT_CACHE_TTL)) {
-        return cached.deals;
-      }
-    }
-
-    const params = new URLSearchParams();
-    if (filter?.storeId) params.set('storeId', filter.storeId);
-    if (filter?.status) params.set('status', filter.status);
-    if (filter?.salesmanPhone) params.set('salesmanPhone', filter.salesmanPhone);
-    if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
-
-    const res = await fetch(`/api/deals/list?${params.toString()}`);
-    const data = await res.json();
-    if (data.success && Array.isArray(data.deals)) {
-      const mapped = data.deals.map((deal: any) => ({
-        ...deal,
-        storeName: STORE_NAME_MAP[deal.storeId] || deal.storeName || `Store ${deal.storeId}`
-      }));
-
-      if (!isPending) {
-        clientDealsCache.set(cacheKey, { timestamp: now, deals: mapped });
-        if (clientDealsCache.size > 20) {
-          const firstKey = clientDealsCache.keys().next().value;
-          if (firstKey) clientDealsCache.delete(firstKey);
-        }
-      }
-
-      return mapped;
-    }
-    return [];
-  } catch (err) {
-    console.error('Cloud fetch pipeline error:', err);
-    return [];
+  const cacheKey = JSON.stringify(filter || {});
+  if (inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey)!;
   }
+
+  const reqPromise = (async () => {
+    try {
+      const params = new URLSearchParams();
+      if (filter?.storeId) params.set('storeId', filter.storeId);
+      if (filter?.status) params.set('status', filter.status);
+      if (filter?.salesmanPhone) params.set('salesmanPhone', filter.salesmanPhone);
+      if (filter?.limit !== undefined) params.set('limit', String(filter.limit));
+      params.set('_t', String(Date.now()));
+
+      const res = await fetch(`/api/deals/list?${params.toString()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.deals)) {
+        const mapped = data.deals.map((deal: any) => ({
+          ...deal,
+          storeName: STORE_NAME_MAP[deal.storeId] || deal.storeName || `Store ${deal.storeId}`
+        }));
+        return mapped;
+      }
+      return [];
+    } catch (err) {
+      console.error('Cloud fetch pipeline error:', err);
+      return [];
+    } finally {
+      inFlightRequests.delete(cacheKey);
+    }
+  })();
+
+  inFlightRequests.set(cacheKey, reqPromise);
+  return reqPromise;
 }
 
 /**
@@ -326,13 +323,11 @@ export function subscribeToPipeline(onUpdate: () => void): () => void {
     } catch (e) {}
   }
 
-  // Note: Instant real-time updates are driven by Push Notifications (devi_notification_received),
-  // Cross-tab BroadcastChannel, and throttled visibilitychange event.
-  // 2-minute cooldown prevents rapid tab switches / screen locks from spamming Vercel CPU.
+  // Fast tab-switch sync (10s throttle prevents spam, but immediately shows fresh deals upon return)
   const handleVisibilityChange = () => {
     if (typeof document !== 'undefined' && !document.hidden) {
       const now = Date.now();
-      if (now - lastPipelineVisibilitySync >= 120000) {
+      if (now - lastPipelineVisibilitySync >= 10000) {
         lastPipelineVisibilitySync = now;
         invalidateClientDealsCache();
         onUpdate();
@@ -343,6 +338,14 @@ export function subscribeToPipeline(onUpdate: () => void): () => void {
     document.addEventListener('visibilitychange', handleVisibilityChange);
   }
 
+  // Gentle foreground heartbeat (25s interval ONLY when tab is actively open/visible)
+  const heartbeatTimer = setInterval(() => {
+    if (typeof document !== 'undefined' && !document.hidden) {
+      invalidateClientDealsCache();
+      onUpdate();
+    }
+  }, 25000);
+
   return () => {
     window.removeEventListener(PIPELINE_EVENT_NAME, handleCustomEvent);
     window.removeEventListener('devi_notification_received', handleCustomEvent);
@@ -350,6 +353,7 @@ export function subscribeToPipeline(onUpdate: () => void): () => void {
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
+    clearInterval(heartbeatTimer);
   };
 }
 

@@ -24,7 +24,8 @@ import {
   Eye,
   X,
   ShieldCheck,
-  Gift
+  Gift,
+  RefreshCw
 } from 'lucide-react';
 import { formatINR, formatDateTime } from '@/lib/utils';
 import { 
@@ -58,6 +59,19 @@ export default function StoreAdminDashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceData | null>(null);
   const [viewingDeal, setViewingDeal] = useState<SalesDeal | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const deals = await fetchSalesPipelineDeals({ storeId: activeStoreId });
+      setAllDeals(deals);
+      setPendingQueue(deals.filter(d => d.status === 'pending_approval'));
+      setApprovedCount(deals.filter(d => d.status === 'approved').length);
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 400);
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -228,6 +242,15 @@ export default function StoreAdminDashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all min-h-[44px] active:scale-95 border border-slate-200 shadow-sm"
+            title="Refresh Deals & Approvals"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-brand-600' : 'text-slate-500'}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
           <Link
             href="/admin/store/leads"
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 text-xs font-bold shadow-sm active:scale-95 transition-all min-h-[44px]"

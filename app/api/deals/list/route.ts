@@ -2,6 +2,15 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+
+const NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+  'Surrogate-Control': 'no-store'
+};
 
 const STORE_NAME_MAP: Record<string, string> = {
   'DM-01': 'Store DM-01 (Kanthal Chauraha - Flagship)',
@@ -19,10 +28,6 @@ const UUID_TO_STORE_CODE: Record<string, string> = {
   '3be59f85-2859-476c-b402-31c552a83146': 'DM-01',
   '7705c16a-2e91-4ef5-93bc-00084848db6a': 'DM-02'
 };
-
-// Warm in-memory cache for repeated deal queries within a serverless instance
-const dealsServerCache = new Map<string, { timestamp: number; deals: any[] }>();
-const SERVER_CACHE_TTL = 15000; // 15 seconds warm cache for non-pending queries
 
 function mapDeals(rows: any[]) {
   return (rows || []).map((row: any) => {
@@ -116,32 +121,11 @@ export async function GET(request: Request) {
       const deals = mapDeals(data || []);
       return NextResponse.json(
         { success: true, deals },
-        {
-          headers: {
-            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-            'Pragma': 'no-cache',
-            'Expires': '0',
-          }
-        }
+        { headers: NO_CACHE_HEADERS }
       );
     }
 
-    // 2. Check Warm Server Memory Cache for non-pending queries
-    const cacheKey = `${storeId || 'ALL'}_${status || 'ALL'}_${salesmanPhone || 'ALL'}_${limit || 'ALL'}`;
-    const now = Date.now();
-    const cached = dealsServerCache.get(cacheKey);
-    if (cached && (now - cached.timestamp < SERVER_CACHE_TTL)) {
-      return NextResponse.json(
-        { success: true, deals: cached.deals },
-        {
-          headers: {
-            'Cache-Control': 'public, s-maxage=20, stale-while-revalidate=60',
-          }
-        }
-      );
-    }
-
-    // 3. Query Execution for non-pending queries
+    // 2. Query Execution for non-pending queries (Strictly fresh, no stale CDN cache)
     let allRows: any[] = [];
 
     if (limit && limit !== 'ALL' && !isNaN(Number(limit)) && Number(limit) > 0) {
@@ -210,20 +194,9 @@ export async function GET(request: Request) {
 
     const deals = mapDeals(allRows);
 
-    // Save in warm cache
-    dealsServerCache.set(cacheKey, { timestamp: now, deals });
-    if (dealsServerCache.size > 50) {
-      const oldestKey = dealsServerCache.keys().next().value;
-      if (oldestKey) dealsServerCache.delete(oldestKey);
-    }
-
     return NextResponse.json(
       { success: true, deals },
-      {
-        headers: {
-          'Cache-Control': 'public, s-maxage=20, stale-while-revalidate=60',
-        }
-      }
+      { headers: NO_CACHE_HEADERS }
     );
   } catch (error: any) {
     console.error('Fetch deals API error:', error);
@@ -231,12 +204,7 @@ export async function GET(request: Request) {
       { success: false, deals: [] },
       {
         status: 500,
-        headers: {
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-          'Surrogate-Control': 'no-store'
-        }
+        headers: NO_CACHE_HEADERS
       }
     );
   }
