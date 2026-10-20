@@ -1,5 +1,7 @@
 'use client';
 
+import { createClient } from './supabase/client';
+
 export interface CustomerLead {
   id: string;
   token: string;
@@ -39,6 +41,40 @@ export async function fetchCloudLeads(storeId?: string): Promise<CustomerLead[]>
       return cached.leads;
     }
 
+    if (typeof window !== 'undefined') {
+      try {
+        const supabase = createClient();
+        let query = supabase.from('leads').select('*').order('created_at', { ascending: false });
+        if (storeId && storeId !== 'ALL') {
+          query = query.eq('store_id', storeId);
+        }
+        const { data, error } = await query;
+        if (!error && Array.isArray(data)) {
+          const mapped: CustomerLead[] = data.map((l: any) => ({
+            id: l.id,
+            token: l.token || l.id,
+            storeId: l.store_id || 'DM-01',
+            storeName: l.store_id === 'DM-02' ? 'Store DM-02 (Freeganj 2.0)' : 'Store DM-01 (Kanthal Chauraha - Flagship)',
+            customerName: l.customer_name,
+            customerPhone: l.customer_phone,
+            salesmanName: l.sales_person_name || 'Counter Staff',
+            salesmanPhone: l.sales_person_phone || '',
+            interestedModel: l.product_of_interest || 'Mobile Phone',
+            category: l.interest_category || 'Mobile Phone',
+            budget: Number(l.budget) || 0,
+            expectedDate: l.expected_purchase_date || l.created_at,
+            status: l.status || 'Warm Lead',
+            notes: l.notes,
+            createdAt: l.created_at
+          }));
+          clientLeadsCache.set(cacheKey, { timestamp: now, leads: mapped });
+          return mapped;
+        }
+      } catch (clientErr) {
+        console.warn('Direct Supabase leads query fallback:', clientErr);
+      }
+    }
+
     const params = new URLSearchParams();
     if (storeId && storeId !== 'ALL') params.set('storeId', storeId);
 
@@ -55,9 +91,6 @@ export async function fetchCloudLeads(storeId?: string): Promise<CustomerLead[]>
   }
 }
 
-/**
- * Save New Lead directly to Supabase Cloud
- */
 export async function saveNewLead(lead: Omit<CustomerLead, 'id' | 'token' | 'createdAt'>): Promise<CustomerLead> {
   const cleanPhone = (lead.customerPhone || '').replace(/\D/g, '').slice(-10);
 

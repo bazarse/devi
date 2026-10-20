@@ -31,34 +31,31 @@ export function invalidateClientStaffCache() {
 // client, or a direct query on the server).
 export async function getStaffUsers(storeId?: string): Promise<StaffUser[]> {
   try {
-    if (typeof window !== 'undefined') {
-      const cacheKey = storeId || 'ALL';
-      const now = Date.now();
-      const cached = clientStaffCache.get(cacheKey);
-      if (cached && (now - cached.timestamp < CLIENT_STAFF_TTL)) {
-        return cached.staff;
-      }
-
-      const params = new URLSearchParams();
-      if (storeId && storeId !== 'ALL') params.set('storeId', storeId);
-      const res = await fetch(`/api/staff/list?${params.toString()}`);
-      const json = await res.json();
-      if (json.success && Array.isArray(json.staff)) {
-        clientStaffCache.set(cacheKey, { timestamp: now, staff: json.staff });
-        return json.staff;
-      }
-      return [];
-    }
-
     const supabase = createClient();
     let query = supabase
       .from('profiles')
       .select('*, stores(code, name)')
       .order('created_at', { ascending: true });
 
+    if (storeId && storeId !== 'ALL') {
+      const targetUuid = storeId === 'DM-01' 
+        ? '3be59f85-2859-476c-b402-31c552a83146'
+        : storeId === 'DM-02'
+        ? '7705c16a-2e91-4ef5-93bc-00084848db6a'
+        : storeId;
+      query = query.eq('store_id', targetUuid);
+    }
+
     const { data, error } = await query;
 
     if (error || !data) {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams();
+        if (storeId && storeId !== 'ALL') params.set('storeId', storeId);
+        const res = await fetch('/api/staff/list?' + params.toString());
+        const json = await res.json();
+        return json.success && Array.isArray(json.staff) ? json.staff : [];
+      }
       return [];
     }
 

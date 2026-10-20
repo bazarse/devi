@@ -1,5 +1,7 @@
 'use client';
 
+import { createClient } from './supabase/client';
+
 export interface CustomerPurchaseItem {
   id: string;
   date: string;
@@ -71,6 +73,38 @@ export async function fetchCloudCustomers(storeId?: string): Promise<CustomerPro
       return cached.customers;
     }
 
+    if (typeof window !== 'undefined') {
+      try {
+        const supabase = createClient();
+        let query = supabase.from('customers').select('*').order('updated_at', { ascending: false }).limit(200);
+        if (storeId && storeId !== 'ALL') {
+          const targetUuid = storeId === 'DM-01' ? '3be59f85-2859-476c-b402-31c552a83146' : '7705c16a-2e91-4ef5-93bc-00084848db6a';
+          query = query.eq('primary_store_id', targetUuid);
+        }
+        const { data, error } = await query;
+        if (!error && Array.isArray(data)) {
+          const mapped = data.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            phone: c.phone,
+            address: c.address,
+            totalSpent: Number(c.total_spent) || 0,
+            creditBalance: Number(c.credit_balance) || 0,
+            primaryStoreId: c.primary_store_id?.includes('7705') ? 'DM-02' : 'DM-01',
+            purchases: [],
+            leads: [],
+            purchaseCount: Number(c.total_spent) > 0 ? 1 : 0,
+            firstSeen: c.created_at,
+            lastPurchaseDate: c.updated_at
+          }));
+          clientCustomersCache.set(cacheKey, { timestamp: now, customers: mapped });
+          return mapped;
+        }
+      } catch (clientErr) {
+        console.warn('Direct Supabase customers query fallback:', clientErr);
+      }
+    }
+
     const params = new URLSearchParams();
     if (storeId && storeId !== 'ALL') params.set('storeId', storeId);
 
@@ -96,9 +130,6 @@ export async function fetchCloudCustomers(storeId?: string): Promise<CustomerPro
   }
 }
 
-/**
- * Upsert Customer in Cloud Supabase when a Sale occurs
- */
 export async function upsertCustomerFromSale(deal: {
   customerName: string;
   customerPhone: string;

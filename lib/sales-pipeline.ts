@@ -207,8 +207,58 @@ export async function submitSaleDeal(dealData: Omit<SalesDeal, 'id' | 'submitted
   return createdDeal;
 }
 
+function mapDealRow(row: any): SalesDeal {
+  const storeCode = UUID_TO_STORE_CODE[row.store_id] || (row.store_id?.includes('7705') ? 'DM-02' : 'DM-01');
+  return {
+    id: row.id,
+    token: `SA-${row.id.slice(0, 6)}`,
+    storeId: storeCode,
+    storeName: STORE_NAME_MAP[storeCode] || `Store ${storeCode}`,
+    customerName: row.customer_name,
+    customerPhone: row.customer_phone,
+    customerAddress: row.customer_address,
+    productName: row.product_name,
+    category: row.category || 'Mobile Phone',
+    imeiSerial: row.imei_serial,
+    basePrice: Number(row.product_price) || Number(row.final_price) || 0,
+    discount: Number(row.discount) || 0,
+    finalPrice: Number(row.final_price) || 0,
+    paymentMethod: row.payment_method || 'Cash',
+    financeProvider: row.finance_provider,
+    disbursementAmount: Number(row.disbursement_amount) || 0,
+    downPaymentCash: Number(row.down_payment_cash) || 0,
+    downPaymentUpi: Number(row.down_payment_upi) || 0,
+    downPaymentCard: Number(row.down_payment_card) || 0,
+    cashAmount: Number(row.cash_amount) || 0,
+    upiAmount: Number(row.upi_amount) || 0,
+    cardAmount: Number(row.card_amount) || 0,
+    neftAmount: Number(row.neft_amount) || 0,
+    remark: row.remark || null,
+    hasExchange: Boolean(row.has_device_exchange),
+    oldDeviceName: row.device_name,
+    oldDeviceImei: row.device_imei,
+    oldDeviceCondition: row.device_condition,
+    exchangeValue: Number(row.device_exchange_amount) || 0,
+    gifts: Array.isArray(row.gifts) ? row.gifts.join(', ') : (row.gifts || 'None'),
+    vasPlan: row.vas_details || 'None',
+    salesPersonName: row.sales_person_name || 'Floor Salesman',
+    salesPersonPhone: row.sales_person_phone,
+    status: row.status,
+    decidedBy: row.approved_by_name,
+    decidedAt: row.approved_at,
+    rejectionReason: row.rejection_reason,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    submittedAt: row.created_at,
+    billNumber: row.invoice_id || (row.id ? `25-26/${row.id.slice(0, 6)}/DEVI` : undefined),
+    isTallyUploaded: Boolean((row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) || (row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED'))),
+    tallyUploadedAt: (row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) ? row.barcode.split(':')[1] : ((row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED')) ? row.invoice_id.split(':')[1] : undefined),
+    tallyUploadedBy: (row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) ? row.barcode.split(':')[2] : ((row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED')) ? row.invoice_id.split(':')[2] : undefined)
+  };
+}
+
 /**
- * 3. FETCH SALES PIPELINE DEALS (100% PURE CLOUD SUPABASE)
+ * 3. FETCH SALES PIPELINE DEALS (DIRECT SUPABASE CLIENT - 0% VERCEL CPU)
  */
 export async function fetchSalesPipelineDeals(filter?: { storeId?: string; status?: string; salesmanPhone?: string; limit?: number | string }): Promise<SalesDeal[]> {
   const cacheKey = JSON.stringify(filter || {});
@@ -217,6 +267,44 @@ export async function fetchSalesPipelineDeals(filter?: { storeId?: string; statu
   }
 
   const reqPromise = (async () => {
+    // 1. Primary path: Direct browser-to-Supabase query (Bypasses Vercel Serverless CPU 100%)
+    try {
+      if (typeof window !== 'undefined') {
+        const supabase = createClient();
+        const columns = 'id, store_id, customer_name, customer_phone, customer_address, product_name, category, imei_serial, product_price, final_price, discount, payment_method, finance_provider, disbursement_amount, down_payment_cash, down_payment_upi, down_payment_card, cash_amount, upi_amount, card_amount, neft_amount, remark, has_device_exchange, device_name, device_imei, device_condition, device_exchange_amount, gifts, vas_details, sales_person_name, sales_person_phone, status, approved_by_name, approved_at, rejection_reason, created_at, updated_at, invoice_id, barcode';
+
+        let query = supabase
+          .from('sales_approvals')
+          .select(columns)
+          .order('created_at', { ascending: false });
+
+        if (filter?.storeId && filter.storeId !== 'ALL') {
+          const targetUuid = STORE_CODE_TO_UUID[filter.storeId] || filter.storeId;
+          query = query.eq('store_id', targetUuid);
+        }
+        if (filter?.status && filter.status !== 'ALL') {
+          query = query.eq('status', filter.status);
+        }
+        if (filter?.salesmanPhone) {
+          const cleanSalesmanPhone = filter.salesmanPhone.replace(/\D/g, '').slice(-10);
+          if (cleanSalesmanPhone.length === 10) {
+            query = query.eq('sales_person_phone', cleanSalesmanPhone);
+          }
+        }
+        if (filter?.limit && !isNaN(Number(filter.limit))) {
+          query = query.limit(Number(filter.limit));
+        }
+
+        const { data, error } = await query;
+        if (!error && Array.isArray(data)) {
+          return data.map(mapDealRow);
+        }
+      }
+    } catch (e) {
+      console.warn('Direct Supabase fetch fallback to API:', e);
+    }
+
+    // 2. Fallback path: API route
     try {
       const params = new URLSearchParams();
       if (filter?.storeId) params.set('storeId', filter.storeId);
