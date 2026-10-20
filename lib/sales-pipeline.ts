@@ -279,31 +279,64 @@ export async function fetchSalesPipelineDeals(filter?: { storeId?: string; statu
         const supabase = createClient();
         const columns = 'id, store_id, customer_name, customer_phone, customer_address, product_name, category, imei_serial, product_price, final_price, discount, payment_method, finance_provider, disbursement_amount, down_payment_cash, down_payment_upi, down_payment_card, cash_amount, upi_amount, card_amount, neft_amount, remark, has_device_exchange, device_name, device_imei, device_condition, device_exchange_amount, gifts, vas_details, sales_person_name, sales_person_phone, status, approved_by_name, approved_at, rejection_reason, created_at, updated_at, invoice_id, barcode';
 
-        let query = supabase
-          .from('sales_approvals')
-          .select(columns)
-          .order('created_at', { ascending: false });
+        let allRows: any[] = [];
+        if (filter?.limit && !isNaN(Number(filter.limit)) && Number(filter.limit) > 0) {
+          let query = supabase
+            .from('sales_approvals')
+            .select(columns)
+            .order('created_at', { ascending: false });
 
-        if (filter?.storeId && filter.storeId !== 'ALL') {
-          const targetUuid = STORE_CODE_TO_UUID[filter.storeId] || filter.storeId;
-          query = query.eq('store_id', targetUuid);
-        }
-        if (filter?.status && filter.status !== 'ALL') {
-          query = query.eq('status', filter.status);
-        }
-        if (filter?.salesmanPhone) {
-          const cleanSalesmanPhone = filter.salesmanPhone.replace(/\D/g, '').slice(-10);
-          if (cleanSalesmanPhone.length === 10) {
-            query = query.eq('sales_person_phone', cleanSalesmanPhone);
+          if (filter?.storeId && filter.storeId !== 'ALL') {
+            const targetUuid = STORE_CODE_TO_UUID[filter.storeId] || filter.storeId;
+            query = query.eq('store_id', targetUuid);
+          }
+          if (filter?.status && filter.status !== 'ALL') {
+            query = query.eq('status', filter.status);
+          }
+          if (filter?.salesmanPhone) {
+            const cleanSalesmanPhone = filter.salesmanPhone.replace(/\D/g, '').slice(-10);
+            if (cleanSalesmanPhone.length === 10) {
+              query = query.eq('sales_person_phone', cleanSalesmanPhone);
+            }
+          }
+          const { data, error } = await query.limit(Number(filter.limit));
+          if (!error && Array.isArray(data)) {
+            allRows = data;
+          }
+        } else {
+          let from = 0;
+          const step = 1000;
+          while (true) {
+            let chunkQuery = supabase
+              .from('sales_approvals')
+              .select(columns, { count: 'exact' })
+              .order('created_at', { ascending: false })
+              .range(from, from + step - 1);
+
+            if (filter?.storeId && filter.storeId !== 'ALL') {
+              const targetUuid = STORE_CODE_TO_UUID[filter.storeId] || filter.storeId;
+              chunkQuery = chunkQuery.eq('store_id', targetUuid);
+            }
+            if (filter?.status && filter.status !== 'ALL') {
+              chunkQuery = chunkQuery.eq('status', filter.status);
+            }
+            if (filter?.salesmanPhone) {
+              const cleanSalesmanPhone = filter.salesmanPhone.replace(/\D/g, '').slice(-10);
+              if (cleanSalesmanPhone.length === 10) {
+                chunkQuery = chunkQuery.eq('sales_person_phone', cleanSalesmanPhone);
+              }
+            }
+
+            const { data, count, error } = await chunkQuery;
+            if (error || !data || data.length === 0) break;
+            allRows.push(...data);
+            if (data.length < step || (count && allRows.length >= count)) break;
+            from += step;
           }
         }
-        if (filter?.limit && !isNaN(Number(filter.limit))) {
-          query = query.limit(Number(filter.limit));
-        }
 
-        const { data, error } = await query;
-        if (!error && Array.isArray(data)) {
-          return data.map(mapDealRow);
+        if (allRows.length > 0) {
+          return allRows.map(mapDealRow);
         }
       }
     } catch (e) {

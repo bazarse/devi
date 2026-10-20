@@ -214,6 +214,10 @@ export default function BillsManagementView({ userRole, defaultStoreId = 'DM-01'
   const totalRevenue = filteredDeals.reduce((sum, d) => sum + d.finalPrice, 0);
   const tallyUploadedCount = filteredDeals.filter(d => (tallyMap[d.id] ? Boolean(tallyMap[d.id]?.isUploaded) : Boolean(d.isTallyUploaded))).length;
   const tallyPendingCount = totalBills - tallyUploadedCount;
+  const financeDeals = deals.filter((d: SalesDeal) => d.paymentMethod === 'EMI' || Boolean(d.financeProvider));
+  const financePendingCount = financeDeals.filter((d: SalesDeal) => !d.isFinanceDisbursed).length;
+  const financePendingAmount = financeDeals.filter((d: SalesDeal) => !d.isFinanceDisbursed).reduce((s: number, d: SalesDeal) => s + (d.disbursementAmount || d.finalPrice || 0), 0);
+  const financeDisbursedCount = financeDeals.filter((d: SalesDeal) => d.isFinanceDisbursed).length;
 
   // Open A4 Invoice Modal with Customized Store Settings
   const handleOpenA4Preview = (deal: SalesDeal) => {
@@ -326,7 +330,7 @@ export default function BillsManagementView({ userRole, defaultStoreId = 'DM-01'
       </div>
 
       {/* ── KPI METRICS CARDS ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
         <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-1">
           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Bills</div>
           <div className="text-2xl font-black text-slate-900">{totalBills}</div>
@@ -355,6 +359,24 @@ export default function BillsManagementView({ userRole, defaultStoreId = 'DM-01'
           </div>
           <div className="text-2xl font-black text-amber-900">{tallyPendingCount} Bills</div>
           <div className="text-[11px] text-amber-800 font-bold">Needs voucher upload</div>
+        </div>
+
+        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-rose-300 bg-rose-50/50 shadow-sm space-y-1">
+          <div className="text-xs font-bold text-rose-900 uppercase tracking-wider flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-rose-600" />
+            <span>Finance Pending</span>
+          </div>
+          <div className="text-2xl font-black text-rose-900">{financePendingCount} Bills</div>
+          <div className="text-[11px] text-rose-800 font-bold">{formatINR(financePendingAmount)} to receive</div>
+        </div>
+
+        <div className="p-4 sm:p-5 rounded-2xl bg-white border border-emerald-300 bg-emerald-50/50 shadow-sm space-y-1">
+          <div className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Finance Disbursed</span>
+          </div>
+          <div className="text-2xl font-black text-emerald-900">{financeDisbursedCount} Bills</div>
+          <div className="text-[11px] text-emerald-800 font-bold">Bank payment received</div>
         </div>
       </div>
 
@@ -463,6 +485,7 @@ export default function BillsManagementView({ userRole, defaultStoreId = 'DM-01'
                 <tr className="bg-slate-900 text-white text-[11px] uppercase tracking-wider font-black">
                   <th className="py-3.5 px-4 w-12 text-center">#</th>
                   <th className="py-3.5 px-4">Tally Upload</th>
+                  <th className="py-3.5 px-4">Finance Disbursement</th>
                   <th className="py-3.5 px-4">Bill No & Date</th>
                   {userRole === 'super_admin' && <th className="py-3.5 px-4">Branch</th>}
                   <th className="py-3.5 px-4">Customer</th>
@@ -525,6 +548,50 @@ export default function BillsManagementView({ userRole, defaultStoreId = 'DM-01'
                             )}
                           </div>
                         </label>
+                      </td>
+
+                      {/* Finance Disbursement Checkbox & Status (Tally-style Tick) */}
+                      <td className="py-3.5 px-4">
+                        {(deal.paymentMethod === 'EMI' || Boolean(deal.financeProvider)) ? (
+                          <label className="inline-flex items-center gap-2 cursor-pointer select-none group">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(deal.isFinanceDisbursed)}
+                              onChange={async () => {
+                                const ok = await toggleFinanceDisbursed(deal.id, Boolean(deal.isFinanceDisbursed), adminName);
+                                if (ok) {
+                                  setDeals(prev => prev.map(d => d.id === deal.id ? { ...d, isFinanceDisbursed: !d.isFinanceDisbursed } : d));
+                                }
+                              }}
+                              className="w-5 h-5 rounded-lg text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-emerald-600 transition-transform active:scale-90"
+                            />
+
+                            <div className="flex flex-col">
+                              <span className={`text-[11px] font-black px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                                deal.isFinanceDisbursed
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-rose-100 text-rose-900 border border-rose-200'
+                              }`}>
+                                {deal.isFinanceDisbursed ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-700" />
+                                    <span>Disbursed</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock className="w-3 h-3 text-rose-700" />
+                                    <span>Pending Disburse</span>
+                                  </>
+                                )}
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-500 font-mono pl-1">
+                                {deal.financeProvider || 'Finance'} {deal.disbursementAmount ? `(₹${deal.disbursementAmount.toLocaleString('en-IN')})` : ''}
+                              </span>
+                            </div>
+                          </label>
+                        ) : (
+                          <span className="text-[11px] text-slate-300 font-mono font-bold pl-2">-</span>
+                        )}
                       </td>
 
                       {/* Bill No & Date */}
