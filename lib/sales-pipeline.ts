@@ -338,13 +338,21 @@ export function subscribeToPipeline(onUpdate: () => void): () => void {
     document.addEventListener('visibilitychange', handleVisibilityChange);
   }
 
-  // Gentle foreground heartbeat (25s interval ONLY when tab is actively open/visible)
-  const heartbeatTimer = setInterval(() => {
-    if (typeof document !== 'undefined' && !document.hidden) {
-      invalidateClientDealsCache();
-      onUpdate();
-    }
-  }, 25000);
+  // 100% Real-time updates via Supabase WebSocket (0% Vercel Serverless CPU)
+  // Completely eliminates the 25-second HTTP polling loop that generated 273K Vercel function calls!
+  let supabaseChannel: any = null;
+  try {
+    const supabase = createClient();
+    supabaseChannel = supabase
+      .channel(`pipeline_realtime_${Math.random().toString(36).substring(2, 9)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales_approvals' }, () => {
+        invalidateClientDealsCache();
+        onUpdate();
+      })
+      .subscribe();
+  } catch (err) {
+    console.warn('Realtime subscription error:', err);
+  }
 
   return () => {
     window.removeEventListener(PIPELINE_EVENT_NAME, handleCustomEvent);
@@ -353,7 +361,12 @@ export function subscribeToPipeline(onUpdate: () => void): () => void {
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
-    clearInterval(heartbeatTimer);
+    if (supabaseChannel) {
+      try {
+        const supabase = createClient();
+        supabase.removeChannel(supabaseChannel);
+      } catch (e) {}
+    }
   };
 }
 
