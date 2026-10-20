@@ -21,6 +21,7 @@ export default function InvoiceModal({ isOpen, onClose, data }: InvoiceModalProp
   const [customBasePrice, setCustomBasePrice] = useState<number>(initialBasePrice);
   const [useBasePrice, setUseBasePrice] = useState(false);
   const [showGiftsOnInvoice, setShowGiftsOnInvoice] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   useEffect(() => {
     if (data.basePrice || data.mrp) {
@@ -92,14 +93,21 @@ export default function InvoiceModal({ isOpen, onClose, data }: InvoiceModalProp
   const formatNum = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const handlePrint = (format: 'a4' | 'thermal') => {
+    setIsPrinting(true);
     setLayoutFormat(format);
     setTimeout(() => {
-      if (typeof window !== 'undefined' && (window as any).AndroidApp?.printInvoice) {
-        (window as any).AndroidApp.printInvoice();
-      } else {
-        window.print();
+      try {
+        if (typeof window !== 'undefined' && (window as any).AndroidApp?.printInvoice) {
+          (window as any).AndroidApp.printInvoice();
+        } else {
+          window.print();
+        }
+      } catch (err) {
+        console.error('Print trigger error:', err);
+      } finally {
+        setTimeout(() => setIsPrinting(false), 900);
       }
-    }, 150);
+    }, 400);
   };
 
   const handleWhatsAppShare = () => {
@@ -232,12 +240,22 @@ export default function InvoiceModal({ isOpen, onClose, data }: InvoiceModalProp
 
             <button
               type="button"
+              disabled={isPrinting}
               onClick={() => handlePrint(layoutFormat)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all active:scale-95 shadow-sm min-h-[36px]"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all active:scale-95 shadow-sm min-h-[36px] disabled:opacity-60"
               title="Direct Print on Thermal Bluetooth or A4 Laser Printer"
             >
-              <Printer className="w-3.5 h-3.5 text-white" />
-              <span>Print {layoutFormat === 'thermal' ? 'Receipt' : 'Bill'}</span>
+              {isPrinting ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Preparing...</span>
+                </>
+              ) : (
+                <>
+                  <Printer className="w-3.5 h-3.5 text-white" />
+                  <span>Print {layoutFormat === 'thermal' ? 'Receipt' : 'Bill'}</span>
+                </>
+              )}
             </button>
             <button
               type="button"

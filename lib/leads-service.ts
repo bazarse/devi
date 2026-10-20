@@ -20,6 +20,24 @@ export interface CustomerLead {
   createdAt: string;
 }
 
+const STORE_CODE_TO_UUID: Record<string, string> = {
+  'DM-01': '3be59f85-2859-476c-b402-31c552a83146',
+  'DM-02': '7705c16a-2e91-4ef5-93bc-00084848db6a'
+};
+
+const STATUS_DB_TO_UI: Record<string, CustomerLead['status']> = {
+  'New': 'Hot Lead',
+  'Interested': 'Hot Lead',
+  'Contacted': 'Warm Lead',
+  'Follow_Up': 'Follow Up',
+  'Converted': 'Converted',
+  'Not_Interested': 'Lost',
+  'Hot Lead': 'Hot Lead',
+  'Warm Lead': 'Warm Lead',
+  'Follow Up': 'Follow Up',
+  'Lost': 'Lost'
+};
+
 const LEADS_EVENT = 'devi_leads_updated';
 
 const clientLeadsCache = new Map<string, { timestamp: number; leads: CustomerLead[] }>();
@@ -46,27 +64,32 @@ export async function fetchCloudLeads(storeId?: string): Promise<CustomerLead[]>
         const supabase = createClient();
         let query = supabase.from('leads').select('*').order('created_at', { ascending: false });
         if (storeId && storeId !== 'ALL') {
-          query = query.eq('store_id', storeId);
+          const targetUuid = STORE_CODE_TO_UUID[storeId] || storeId;
+          query = query.eq('store_id', targetUuid);
         }
         const { data, error } = await query;
         if (!error && Array.isArray(data)) {
-          const mapped: CustomerLead[] = data.map((l: any) => ({
-            id: l.id,
-            token: l.token || l.id,
-            storeId: l.store_id || 'DM-01',
-            storeName: l.store_id === 'DM-02' ? 'Store DM-02 (Freeganj 2.0)' : 'Store DM-01 (Kanthal Chauraha - Flagship)',
-            customerName: l.customer_name,
-            customerPhone: l.customer_phone,
-            salesmanName: l.sales_person_name || 'Counter Staff',
-            salesmanPhone: l.sales_person_phone || '',
-            interestedModel: l.product_of_interest || 'Mobile Phone',
-            category: l.interest_category || 'Mobile Phone',
-            budget: Number(l.budget) || 0,
-            expectedDate: l.expected_purchase_date || l.created_at,
-            status: l.status || 'Warm Lead',
-            notes: l.notes,
-            createdAt: l.created_at
-          }));
+          const mapped: CustomerLead[] = data.map((l: any) => {
+            const resolvedStoreCode = (l.store_id && l.store_id.includes('7705')) ? 'DM-02' : 'DM-01';
+            const resolvedStatus = STATUS_DB_TO_UI[l.status] || (l.status as CustomerLead['status']) || 'Warm Lead';
+            return {
+              id: l.id,
+              token: l.token || `LD-${String(l.id || '').slice(0, 6)}`,
+              storeId: resolvedStoreCode,
+              storeName: resolvedStoreCode === 'DM-02' ? 'Store DM-02 (Freeganj 2.0)' : 'Store DM-01 (Kanthal Chauraha - Flagship)',
+              customerName: l.customer_name,
+              customerPhone: l.customer_phone,
+              salesmanName: l.sales_person_name || 'Floor Salesman',
+              salesmanPhone: l.sales_person_phone || '',
+              interestedModel: l.product_of_interest || 'Mobile Phone',
+              category: l.interest_category || 'Mobile Phone',
+              budget: Number(l.budget) || 0,
+              expectedDate: l.follow_up_date || l.expected_purchase_date || l.created_at,
+              status: resolvedStatus,
+              notes: l.notes,
+              createdAt: l.created_at
+            };
+          });
           clientLeadsCache.set(cacheKey, { timestamp: now, leads: mapped });
           return mapped;
         }

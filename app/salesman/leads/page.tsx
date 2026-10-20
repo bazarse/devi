@@ -39,9 +39,11 @@ export default function SalesmanLeadsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [salesmanName, setSalesmanName] = useState('Salesman');
+  const [salesmanPhone, setSalesmanPhone] = useState('');
   const [activeStoreId, setActiveStoreId] = useState('DM-01');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form State
   const [custName, setCustName] = useState('');
@@ -61,8 +63,10 @@ export default function SalesmanLeadsPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const staff = localStorage.getItem('devi_staff_name') || 'Floor Salesman';
+      const phone = localStorage.getItem('devi_staff_phone') || localStorage.getItem('devi_user_phone') || '';
       const store = sessionStorage.getItem('devi_store_id') || localStorage.getItem('devi_store_id') || localStorage.getItem('devi_active_store') || 'DM-01';
       setSalesmanName(staff);
+      setSalesmanPhone(phone);
       setActiveStoreId(store);
     }
     loadLeads();
@@ -74,32 +78,40 @@ export default function SalesmanLeadsPage() {
 
   const handleAddLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!custName || !custPhone || !modelName) return;
+    if (!custName || !custPhone || !modelName || isSubmitting) return;
 
-    await saveNewLead({
+    setIsSubmitting(true);
+    try {
+      const saved = await saveNewLead({
+        storeId: activeStoreId,
+        storeName: activeStoreId === 'DM-02' ? 'Devi Mobile 2.0 (Freeganj)' : 'Devi Mobile (Kanthal)',
+        salesmanName: salesmanName,
+        salesmanPhone: salesmanPhone || undefined,
+        customerName: custName,
+        customerPhone: custPhone,
+        interestedModel: modelName,
+        category,
+        budget: Number(budget) || 0,
+        expectedDate,
+        status: leadStatus,
+        notes
+      });
 
-      storeId: activeStoreId,
-      storeName: activeStoreId === 'DM-01' ? 'Devi Mobile (Kanthal)' : 'Devi Mobile 2.0 (Freeganj)',
-      salesmanName: salesmanName,
-      salesmanPhone: '9876543210',
-      customerName: custName,
-      customerPhone: custPhone,
-      interestedModel: modelName,
-      category,
-      budget: Number(budget) || 0,
-      expectedDate,
-      status: leadStatus,
-      notes
-    });
+      setLeads(prev => [saved, ...prev.filter(l => l.id !== saved.id)]);
+      setShowAddModal(false);
+      setCustName('');
+      setCustPhone('');
+      setModelName('');
+      setBudget('');
+      setNotes('');
 
-    setShowAddModal(false);
-    setCustName('');
-    setCustPhone('');
-    setModelName('');
-    setBudget('');
-    setNotes('');
-
-    confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+      confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+      await loadLeads();
+    } catch (err) {
+      console.error('Failed to save lead:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const filteredLeads = leads.filter(l => {
@@ -476,9 +488,17 @@ export default function SalesmanLeadsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold shadow-md shadow-brand-500/20 active:scale-95 transition-all"
+                  disabled={isSubmitting}
+                  className="flex-1 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold shadow-md shadow-brand-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
                 >
-                  Save Lead
+                  {isSubmitting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Saving Lead...</span>
+                    </>
+                  ) : (
+                    <span>Save Lead</span>
+                  )}
                 </button>
               </div>
             </form>

@@ -263,6 +263,8 @@ export async function POST(request: Request) {
             .maybeSingle();
 
           const spent = Number(updated?.final_price) || 0;
+          const creditMatch = (updated?.remark || '').match(/\[UDHAARI_CREDIT:₹?(\d+)\]/);
+          const addedCredit = creditMatch ? Number(creditMatch[1]) : 0;
 
           if (existingCust) {
             await supabase
@@ -271,6 +273,7 @@ export async function POST(request: Request) {
                 name: updated?.customer_name || existingCust.name,
                 address: updated?.customer_address || existingCust.address,
                 total_spent: (Number(existingCust.total_spent) || 0) + spent,
+                credit_balance: (Number(existingCust.credit_balance) || 0) + addedCredit,
                 updated_at: nowIso
               })
               .eq('id', existingCust.id);
@@ -283,7 +286,7 @@ export async function POST(request: Request) {
                 address: updated?.customer_address || null,
                 primary_store_id: updated?.store_id,
                 total_spent: spent,
-                credit_balance: 0
+                credit_balance: addedCredit
               });
           }
         } catch (custErr) {

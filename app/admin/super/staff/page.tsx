@@ -18,10 +18,11 @@ import {
   X,
   Store,
   Sparkles,
+  ArrowRightLeft,
   Trash2
 } from 'lucide-react';
 import { formatINR } from '@/lib/utils';
-import { getStaffUsers, createStaffAccount, updateStaffPasscode, toggleStaffActive, deleteStaffAccount, StaffUser } from '@/lib/staff-service';
+import { getStaffUsers, createStaffAccount, updateStaffPasscode, toggleStaffActive, deleteStaffAccount, transferStaffStore, StaffUser } from '@/lib/staff-service';
 import { getActiveStores, StoreBranch, DEFAULT_STORES } from '@/lib/store-service';
 import confetti from 'canvas-confetti';
 import ErrorBoundary from '@/components/error-boundary';
@@ -37,6 +38,10 @@ export default function SuperAdminStaffHierarchyPage() {
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [showResetPinModal, setShowResetPinModal] = useState(false);
   const [showMasterPinModal, setShowMasterPinModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [staffToTransfer, setStaffToTransfer] = useState<StaffUser | null>(null);
+  const [targetTransferStore, setTargetTransferStore] = useState<'DM-01' | 'DM-02'>('DM-02');
+  const [isTransferring, setIsTransferring] = useState(false);
 
   // Selected staff for action
   const [selectedStaff, setSelectedStaff] = useState<StaffUser | null>(null);
@@ -129,6 +134,22 @@ export default function SuperAdminStaffHierarchyPage() {
       alert('Failed to update status on server. Please try again.');
     }
     setTogglingPhone(null);
+  };
+
+  const handleConfirmTransferStaff = async () => {
+    if (!staffToTransfer) return;
+    setIsTransferring(true);
+    const success = await transferStaffStore(staffToTransfer.phone, targetTransferStore);
+    setIsTransferring(false);
+    if (success) {
+      setShowTransferModal(false);
+      setStaffToTransfer(null);
+      confetti({ particleCount: 50, spread: 60 });
+      const users = await getStaffUsers();
+      setStaffList(users);
+    } else {
+      alert('Failed to transfer staff to target branch.');
+    }
   };
 
   // Handle PIN Reset
@@ -386,6 +407,21 @@ export default function SuperAdminStaffHierarchyPage() {
 
                     <td className="px-4 py-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStaffToTransfer(staff);
+                            const current = staff.store_id?.includes('7705') ? 'DM-02' : 'DM-01';
+                            setTargetTransferStore(current === 'DM-01' ? 'DM-02' : 'DM-01');
+                            setShowTransferModal(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition-colors border border-blue-200"
+                          title="Transfer Staff to Another Branch"
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Transfer</span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => {
@@ -655,6 +691,83 @@ export default function SuperAdminStaffHierarchyPage() {
         </div>
       )}
 
+
+      {/* ── TRANSFER STAFF BRANCH MODAL ── */}
+      {showTransferModal && staffToTransfer && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-scaleUp">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <ArrowRightLeft className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Transfer Store Branch</h3>
+                  <div className="text-xs text-slate-500 font-medium">{staffToTransfer.full_name} ({staffToTransfer.role})</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTransferModal(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+                <span className="text-slate-500 font-bold uppercase text-[10px]">Current Branch</span>
+                <div className="font-black text-slate-800 text-sm">
+                  {staffToTransfer.store_id?.includes('7705') ? 'Store DM-02 (Freeganj 2.0)' : 'Store DM-01 (Kanthal Chauraha)'}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1.5">Select Target Branch to Transfer</label>
+                <select
+                  value={targetTransferStore}
+                  onChange={(e) => setTargetTransferStore(e.target.value as any)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="DM-01">Store DM-01 (Kanthal Chauraha - Flagship)</option>
+                  <option value="DM-02">Store DM-02 (Freeganj 2.0 Branch)</option>
+                </select>
+              </div>
+
+              <div className="text-[11px] text-slate-500 leading-relaxed bg-blue-50/60 p-3 rounded-xl border border-blue-100">
+                💡 <span className="font-bold text-blue-900">Note:</span> Transfer karne ke baad salesman ke login par naya store show hoga. Uski purani billing history aur approvals record safe rahenge.
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowTransferModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold hover:bg-slate-50 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isTransferring}
+                onClick={handleConfirmTransferStaff}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isTransferring ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Transferring...</span>
+                  </>
+                ) : (
+                  <span>Confirm Transfer</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

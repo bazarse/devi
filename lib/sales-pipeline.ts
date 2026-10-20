@@ -50,6 +50,9 @@ export interface SalesDeal {
   isTallyUploaded?: boolean;
   tallyUploadedAt?: string;
   tallyUploadedBy?: string;
+  isFinanceDisbursed?: boolean;
+  financeDisbursedAt?: string;
+  financeDisbursedBy?: string;
 }
 
 
@@ -253,7 +256,10 @@ function mapDealRow(row: any): SalesDeal {
     billNumber: row.invoice_id || (row.id ? `25-26/${row.id.slice(0, 6)}/DEVI` : undefined),
     isTallyUploaded: Boolean((row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) || (row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED'))),
     tallyUploadedAt: (row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) ? row.barcode.split(':')[1] : ((row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED')) ? row.invoice_id.split(':')[1] : undefined),
-    tallyUploadedBy: (row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) ? row.barcode.split(':')[2] : ((row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED')) ? row.invoice_id.split(':')[2] : undefined)
+    tallyUploadedBy: (row.barcode && row.barcode.startsWith('TALLY_UPLOADED')) ? row.barcode.split(':')[2] : ((row.invoice_id && row.invoice_id.startsWith('TALLY_UPLOADED')) ? row.invoice_id.split(':')[2] : undefined),
+    isFinanceDisbursed: Boolean((row.remark && row.remark.includes('FINANCE_DISBURSED')) || (row.barcode && row.barcode.includes('FINANCE_DISBURSED'))),
+    financeDisbursedAt: (row.remark && row.remark.includes('FINANCE_DISBURSED:')) ? row.remark.split('FINANCE_DISBURSED:')[1]?.split(':')[0] : undefined,
+    financeDisbursedBy: (row.remark && row.remark.includes('FINANCE_DISBURSED:')) ? row.remark.split('FINANCE_DISBURSED:')[1]?.split(':')[1]?.split(']')[0] : undefined
   };
 }
 
@@ -492,4 +498,42 @@ export function purgeLocalSalesPipeline(): void {
       broadcastPipelineUpdate();
     } catch (e) {}
   }
+}
+
+export async function toggleFinanceDisbursed(
+  dealId: string, 
+  currentStatus: boolean, 
+  adminName: string
+): Promise<boolean> {
+  const nextStatus = !currentStatus;
+  try {
+    const supabase = createClient();
+    const { data: currentDeal } = await supabase
+      .from('sales_approvals')
+      .select('id, remark')
+      .eq('id', dealId)
+      .maybeSingle();
+
+    let currentRemark = currentDeal?.remark || '';
+    currentRemark = currentRemark.replace(/\[FINANCE_DISBURSED:[^\]]*\]/g, '').replace(/\[FINANCE_DISBURSED\]/g, '').trim();
+
+    if (nextStatus) {
+      const tag = `[FINANCE_DISBURSED:${new Date().toISOString()}:${adminName || 'Admin'}]`;
+      currentRemark = currentRemark ? `${currentRemark} | ${tag}` : tag;
+    }
+
+    const { error } = await supabase
+      .from('sales_approvals')
+      .update({ remark: currentRemark, updated_at: new Date().toISOString() })
+      .eq('id', dealId);
+
+    if (!error) {
+      invalidateClientDealsCache();
+      broadcastPipelineUpdate();
+      return true;
+    }
+  } catch (e) {
+    console.error('Failed to toggle finance disbursement:', e);
+  }
+  return false;
 }

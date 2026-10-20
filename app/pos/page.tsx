@@ -109,6 +109,7 @@ export default function PosNewSalePage() {
   const [upiAmount, setUpiAmount] = useState<number>(0);
   const [cardAmount, setCardAmount] = useState<number>(0);
   const [neftAmount, setNeftAmount] = useState<number>(0);
+  const [creditAmount, setCreditAmount] = useState<number>(0); // Udhaari / Khata
 
   // EMI State
   const [financeProvider, setFinanceProvider] = useState('Bajaj Finance Limited');
@@ -332,11 +333,12 @@ export default function PosNewSalePage() {
     // Auto-fill payment amounts
     const price = item.sellingPrice || item.mrp;
     if (paymentMode === 'Direct') {
-      // Default the full amount into Cash; salesman can move parts to UPI/Card/NEFT.
+      // Default the full amount into Cash; salesman can move parts to UPI/Card/NEFT/Udhaari.
       setCashAmount(price);
       setUpiAmount(0);
       setCardAmount(0);
       setNeftAmount(0);
+      setCreditAmount(0);
     } else {
       const down = Math.min(3000, price);
       setDownPaymentCash(down);
@@ -355,7 +357,7 @@ export default function PosNewSalePage() {
     const exch = hasExchange ? (exchangeValue || 0) : 0;
 
     if (paymentMode === 'Direct') {
-      const totalPaid = (cashAmount || 0) + (upiAmount || 0) + (cardAmount || 0) + (neftAmount || 0) + exch;
+      const totalPaid = (cashAmount || 0) + (upiAmount || 0) + (cardAmount || 0) + (neftAmount || 0) + (creditAmount || 0) + exch;
       const difference = finalPrice - totalPaid;
       if (Math.abs(difference) < 0.01) {
         return { isValid: true, difference: 0, message: 'Payment validation successful! Exactly 100% matched.' };
@@ -408,16 +410,21 @@ export default function PosNewSalePage() {
 
       const cleanSalesPhone = (activeStaffPhone || '').replace(/\D/g, '').slice(-10) || '0000000000';
 
-      const positiveChannels = [cashAmount > 0, upiAmount > 0, cardAmount > 0, neftAmount > 0].filter(Boolean).length;
+      const positiveChannels = [cashAmount > 0, upiAmount > 0, cardAmount > 0, neftAmount > 0, creditAmount > 0].filter(Boolean).length;
       const computedPaymentMethod = paymentMode === 'EMI'
         ? 'EMI'
         : positiveChannels > 1
           ? 'Split'
-          : (upiAmount > 0 ? 'UPI' : (cardAmount > 0 ? 'Card' : (neftAmount > 0 ? 'NEFT' : 'Cash')));
+          : (creditAmount > 0 ? 'Udhaari' : (upiAmount > 0 ? 'UPI' : (cardAmount > 0 ? 'Card' : (neftAmount > 0 ? 'NEFT' : 'Cash'))));
 
       const totalDown = (downPaymentCash || 0) + (downPaymentUpi || 0) + (downPaymentCard || 0);
       const totalFinance = totalDown + (hasExchange ? (exchangeValue || 0) : 0) + (disbursementAmount || 0);
       const effectiveFinalPrice = paymentMode === 'EMI' ? Math.max(finalPrice, totalFinance) : finalPrice;
+
+      const combinedRemark = [
+        remark.trim() || '',
+        creditAmount > 0 ? `[UDHAARI_CREDIT:₹${creditAmount}]` : ''
+      ].filter(Boolean).join(' | ');
 
       await submitSaleDeal({
         token: newApprovalId,
@@ -448,7 +455,7 @@ export default function PosNewSalePage() {
         exchangeValue: hasExchange ? exchangeValue : 0,
         gifts: hasGifts ? giftItemName : 'None',
         vasPlan: hasVas ? `${vasName} (₹${vasPrice})` : 'None',
-        remark: remark.trim() || undefined,
+        remark: combinedRemark || undefined,
         isEmiLocked,
         status: 'pending_approval',
         decidedBy: null,
@@ -1126,6 +1133,7 @@ export default function PosNewSalePage() {
                         setUpiAmount(0);
                         setCardAmount(0);
                         setNeftAmount(0);
+                        setCreditAmount(0);
                       }}
                       className="text-[11px] font-bold text-brand-600 hover:underline min-h-[36px] inline-flex items-center"
                     >
@@ -1133,13 +1141,13 @@ export default function PosNewSalePage() {
                     </button>
                     <span className="text-[11px] font-bold text-slate-500">
                       Total: <span className={`font-mono ${
-                        ((cashAmount || 0) + (upiAmount || 0) + (cardAmount || 0) + (neftAmount || 0) + (hasExchange ? (exchangeValue || 0) : 0)) === finalPrice
+                        ((cashAmount || 0) + (upiAmount || 0) + (cardAmount || 0) + (neftAmount || 0) + (creditAmount || 0) + (hasExchange ? (exchangeValue || 0) : 0)) === finalPrice
                           ? 'text-emerald-700' : 'text-amber-700'
-                      }`}>{formatINR((cashAmount || 0) + (upiAmount || 0) + (cardAmount || 0) + (neftAmount || 0))}</span> / {formatINR(Math.max(0, finalPrice - (hasExchange ? (exchangeValue || 0) : 0)))}
+                      }`}>{formatINR((cashAmount || 0) + (upiAmount || 0) + (cardAmount || 0) + (neftAmount || 0) + (creditAmount || 0))}</span> / {formatINR(Math.max(0, finalPrice - (hasExchange ? (exchangeValue || 0) : 0)))}
                     </span>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                   <div>
                     <label className="text-xs font-semibold text-slate-600 block mb-1">💵 Cash (₹)</label>
                     <input
@@ -1178,6 +1186,16 @@ export default function PosNewSalePage() {
                       onChange={(e) => setNeftAmount(Number(e.target.value))}
                       placeholder="0"
                       className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm font-bold focus:outline-none"
+                    />
+                  </div>
+                  <div className="bg-rose-50/80 p-1.5 rounded-xl border border-rose-200">
+                    <label className="text-xs font-bold text-rose-800 block mb-1">📜 उधारी / Credit (₹)</label>
+                    <input
+                      type="number"
+                      value={creditAmount || ''}
+                      onChange={(e) => setCreditAmount(Number(e.target.value))}
+                      placeholder="0"
+                      className="w-full px-3 py-1.5 rounded-lg border border-rose-300 text-sm font-black text-rose-900 bg-white focus:outline-none focus:ring-2 focus:ring-rose-500"
                     />
                   </div>
                 </div>

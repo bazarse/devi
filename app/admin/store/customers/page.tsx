@@ -5,6 +5,8 @@ import Link from 'next/link';
 import PaginationControls from '@/components/pagination-controls';
 import { 
   Users, 
+  Download,
+  FileSpreadsheet,
   Search, 
   Phone, 
   MessageSquare, 
@@ -40,6 +42,7 @@ export default function StoreCustomersPage() {
   const [customerToDelete, setCustomerToDelete] = useState<CustomerProfile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteSuccessToast, setDeleteSuccessToast] = useState<string | null>(null);
+  const [showUdhaariOnly, setShowUdhaariOnly] = useState(false);
 
 
   useEffect(() => {
@@ -66,6 +69,7 @@ export default function StoreCustomersPage() {
 
   const filtered = customers
     .filter(c => {
+      if (showUdhaariOnly && (Number(c.creditBalance) || Number(c.totalDue) || 0) <= 0) return false;
       if (!c) return false;
       const q = (searchQuery || '').toLowerCase().trim();
       const matchesSearch = !q || 
@@ -98,7 +102,38 @@ export default function StoreCustomersPage() {
 
   const totalSpentAll = (customers || []).reduce((sum, c) => sum + (c?.totalSpent || 0), 0);
   const totalPurchasesAll = (customers || []).reduce((sum, c) => sum + (c?.purchaseCount || 0), 0);
-  const totalDueAll = (customers || []).reduce((sum, c) => sum + (c?.totalDue || 0), 0);
+  
+  const exportUdhaariExcel = () => {
+    const list = customers.filter(c => (Number(c.creditBalance) || Number(c.totalDue) || 0) > 0);
+    if (list.length === 0) {
+      alert('Currently no customers have outstanding udhaari/credit.');
+      return;
+    }
+    const headers = ['Customer Name', 'Phone', 'Address', 'Primary Store', 'Udhaari Balance (INR)', 'Total Purchases (INR)', 'Last Purchase Date'];
+    const rows = list.map(c => [
+      `"${(c.name || 'Valued Customer').replace(/"/g, '""')}"`,
+      `"${c.phone || ''}"`,
+      `"${(c.address || 'N/A').replace(/"/g, '""')}"`,
+      `"${c.primaryStoreId || activeStoreId || 'DM-01'}"`,
+      Number(c.creditBalance) || Number(c.totalDue) || 0,
+      Number(c.totalSpent) || 0,
+      `"${c.lastPurchaseDate ? new Date(c.lastPurchaseDate).toLocaleDateString('en-IN') : 'N/A'}"`
+    ]);
+    const csv = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Devi_Mobile_Udhaari_Report_${activeStoreId}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const totalDueAll = (customers || []).reduce((sum, c) => sum + (Number(c?.creditBalance) || Number(c?.totalDue) || 0), 0);
+  const udhaariCount = (customers || []).filter(c => (Number(c?.creditBalance) || Number(c?.totalDue) || 0) > 0).length;
+
 
   const handleConfirmDelete = async () => {
     if (!customerToDelete) return;
@@ -211,7 +246,32 @@ export default function StoreCustomersPage() {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setShowUdhaariOnly(prev => !prev)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 ${
+              showUdhaariOnly
+                ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+            }`}
+          >
+            <span>📜 Udhaari Khata Only</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${showUdhaariOnly ? 'bg-white text-rose-800' : 'bg-rose-200 text-rose-900'}`}>
+              {udhaariCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={exportUdhaariExcel}
+            className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-sm flex items-center gap-1.5 min-h-[38px]"
+            title="Download complete Udhaari ledger in Excel CSV format"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download Udhaari Excel</span>
+          </button>
+
           <span className="text-xs font-bold text-slate-400">Sort:</span>
           {(['recent', 'spent', 'purchases'] as const).map(s => (
             <button

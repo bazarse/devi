@@ -173,3 +173,25 @@ export async function deleteStaffAccount(phoneOrId: string): Promise<boolean> {
     return false;
   }
 }
+
+
+// Transfer staff member to another store branch (DM-01 or DM-02)
+export async function transferStaffStore(phone: string, targetStoreCode: 'DM-01' | 'DM-02'): Promise<boolean> {
+  const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+  try {
+    const res = await fetch('/api/staff/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: cleanPhone, storeId: targetStoreCode }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success === true) {
+      invalidateClientStaffCache();
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn('API staff transfer failed:', err);
+    return false;
+  }
+}

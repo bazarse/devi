@@ -28,7 +28,7 @@ import {
   Gift
 } from 'lucide-react';
 import { formatINR, formatDateTime } from '@/lib/utils';
-import { SalesDeal, fetchSalesPipelineDeals, subscribeToPipeline, deleteSaleDeal, editDealInPipeline } from '@/lib/sales-pipeline';
+import { SalesDeal, fetchSalesPipelineDeals, subscribeToPipeline, deleteSaleDeal, editDealInPipeline, toggleFinanceDisbursed } from '@/lib/sales-pipeline';
 import { getStoreBillConfig, saveStoreBillConfig, StoreBillConfig, DEFAULT_BILL_CONFIGS } from '@/lib/bill-config-service';
 import { getAllTallyStatuses, toggleTallyStatus, subscribeToTallyUpdates, TallyStatus, deleteTallyStatus, syncTallyStatusesFromDeals } from '@/lib/tally-tracker-service';
 import InvoiceModal from '@/components/invoice-modal';
@@ -51,6 +51,7 @@ export default function BillsManagementView({ userRole, defaultStoreId = 'DM-01'
   
   // Tally & Filter states
   const [tallyFilter, setTallyFilter] = useState<'ALL' | 'PENDING' | 'UPLOADED'>('ALL');
+  const [financeFilter, setFinanceFilter] = useState<'ALL' | 'PENDING' | 'DISBURSED'>('ALL');
   const [dateFilter, setDateFilter] = useState<'Today' | 'Yesterday' | 'ThisMonth' | 'All'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [tallyMap, setTallyMap] = useState<Record<string, TallyStatus>>({});
