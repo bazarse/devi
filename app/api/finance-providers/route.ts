@@ -3,12 +3,12 @@ import { createServerSupabaseClient } from '@/lib/supabase/server-client';
 
 export const dynamic = 'force-dynamic';
 
-function mapRow(r: any) {
+function mapRow(r: any, requestedStoreId?: string | null) {
   return {
     id: r.id,
     name: r.name,
     code: r.code || '',
-    storeId: r.store_id || 'DM-01',
+    storeId: requestedStoreId || 'ALL',
     merchantId: r.merchant_id || undefined,
     contactPerson: r.contact_person || undefined,
     contactPhone: r.contact_phone || undefined,
@@ -25,15 +25,16 @@ export async function GET(request: Request) {
     const storeId = searchParams.get('storeId');
     const supabase = createServerSupabaseClient();
 
-    let query = supabase.from('finance_providers').select('*').order('name', { ascending: true });
-    if (storeId && storeId !== 'ALL') query = query.eq('store_id', storeId);
+    const { data, error } = await supabase
+      .from('finance_providers')
+      .select('*')
+      .order('name', { ascending: true });
 
-    const { data, error } = await query;
     if (error) {
       return NextResponse.json({ success: false, providers: [], error: error.message }, { status: 500 });
     }
     return NextResponse.json(
-      { success: true, providers: (data || []).map(mapRow) },
+      { success: true, providers: (data || []).map(r => mapRow(r, storeId)) },
       { headers: { 'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' } }
     );
   } catch (e: any) {
@@ -46,21 +47,17 @@ export async function POST(request: Request) {
   try {
     const b = await request.json();
     const name = String(b?.name ?? '').trim();
-    const storeId = String(b?.storeId ?? '').trim();
-    if (!name || !storeId) {
-      return NextResponse.json({ success: false, error: 'name and storeId required' }, { status: 400 });
+    if (!name) {
+      return NextResponse.json({ success: false, error: 'name required' }, { status: 400 });
     }
 
     const supabase = createServerSupabaseClient();
     const row: any = {
       name,
       code: b.code || null,
-      store_id: storeId,
-      merchant_id: b.merchantId || null,
       contact_person: b.contactPerson || null,
       contact_phone: b.contactPhone || null,
       is_active: b.isActive !== false,
-      notes: b.notes || null,
     };
     // If a uuid id is provided, update that row; else insert new.
     const isUuid = typeof b.id === 'string' && /^[0-9a-f-]{36}$/i.test(b.id);
@@ -75,7 +72,7 @@ export async function POST(request: Request) {
     if (error) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ success: true, provider: data ? mapRow(data) : null });
+    return NextResponse.json({ success: true, provider: data ? mapRow(data, b.storeId) : null });
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e?.message }, { status: 500 });
   }
